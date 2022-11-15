@@ -69,9 +69,13 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <strong>1.3.6-paf2</strong>
+    <ul>
+        <li>[NEW] if output contains <pre>expected:\n...\nactual:\n...\n</pre>, that output is now hyperlinked to and diff dialog</li>
+    </ul>
     <strong>1.3.6-paf1</strong>
     <ul>
-        <li>[NEW] compatible with IDEA222</li>
+        <li>[FIX] partial file names are navigable now</li>
     </ul>
     <strong>1.3.6</strong>
     <ul>
