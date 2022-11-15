@@ -28,6 +28,7 @@ import java.util.regex.Pattern
  */
 class LuaTracebackFilter(private val project: Project) : Filter {
 
+    private val pattern: Pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+):")
     override fun applyFilter(line: String, entireLength: Int): Filter.Result? {
         //lua.exe: Test.lua:3: attempt to call global 'print1' (a nil value)
         //stack traceback:
@@ -35,7 +36,6 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         //Test.lua:7: in function 'b'
         //Test.lua:11: in main chunk
 
-        val pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+):")
         val matcher = pattern.matcher(line)
         if (matcher.find()) {
             val fileName = matcher.group(1).replace(Regex("^\\.\\.\\."), "") // remove leading '...', it confuses finders
