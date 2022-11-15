@@ -16,9 +16,16 @@
 
 package com.tang.intellij.lua.debugger
 
+import com.intellij.diff.DiffDialogHints
+import com.intellij.diff.DiffManager
 import com.intellij.execution.filters.Filter
+import com.intellij.execution.filters.HyperlinkInfoBase
 import com.intellij.execution.filters.OpenFileHyperlinkInfo
+import com.intellij.execution.testframework.actions.TestDiffRequestProcessor
+import com.intellij.execution.testframework.stacktrace.DiffHyperlink
+import com.intellij.openapi.ListSelection
 import com.intellij.openapi.project.Project
+import com.intellij.ui.awt.RelativePoint
 import com.tang.intellij.lua.psi.LuaFileUtil
 import java.util.regex.Pattern
 
@@ -28,27 +35,73 @@ import java.util.regex.Pattern
  */
 class LuaTracebackFilter(private val project: Project) : Filter {
 
+    private val filePattern: Pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+):")
+
+    private val expectedRegex = Regex("expected\\:\\s*\\R")
+    private val actualRegex = Regex("actual\\:\\s*\\R")
+
+    private var diffHyperlink: DiffHyperlinkInfo? = null
+
     override fun applyFilter(line: String, entireLength: Int): Filter.Result? {
         //lua.exe: Test.lua:3: attempt to call global 'print1' (a nil value)
         //stack traceback:
         //Test.lua:3: in function 'a'
         //Test.lua:7: in function 'b'
         //Test.lua:11: in main chunk
+        /*
+            ...some_test.lua:116: expected:
+            {
+                ...
+            }
+            actual:
+            {
+                ...
+            }
+        */
+        if(line.contains(expectedRegex))
+            diffHyperlink = DiffHyperlinkInfo() // pen down
 
-        val pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+):")
-        val matcher = pattern.matcher(line)
+        val matcher = filePattern.matcher(line)
         if (matcher.find()) {
             val fileName = matcher.group(1).replace(Regex("^\\.\\.\\."), "") // remove leading '...', it confuses finders
             val lineNumber = Integer.parseInt(matcher.group(3))
             val file = LuaFileUtil.findFile(project, fileName)
             if (file != null) {
                 val hyperlink = OpenFileHyperlinkInfo(project, file, lineNumber - 1)
+
                 val textStartOffset = entireLength - line.length
                 val startPos = matcher.start(1)
                 val endPos = matcher.end(3) + 1
                 return Filter.Result(startPos + textStartOffset, endPos + textStartOffset, hyperlink)
             }
         }
+
+        if(diffHyperlink != null) {
+            if(line.contains(actualRegex)) {
+                diffHyperlink!!.actual = ""
+                return null
+            }
+            val result = Filter.Result(entireLength - line.length, entireLength, diffHyperlink)
+            if(diffHyperlink!!.actual == null) {
+                diffHyperlink!!.expected = diffHyperlink!!.expected + line
+            } else {
+                diffHyperlink!!.actual = diffHyperlink!!.actual + line
+                if(line.startsWith("}")) // last line of table output
+                    diffHyperlink = null // pen up
+            }
+            return result
+        }
         return null
+    }
+
+    class DiffHyperlinkInfo() : HyperlinkInfoBase() {
+        var expected: String = ""
+        var actual: String? = null
+        override fun navigate(project: Project, hyperlinkLocationPoint: RelativePoint?) {
+            val hyperlink = DiffHyperlink(expected, actual!!, null, null, true)
+            val listSelection = ListSelection.createSingleton(hyperlink)
+            val chain = TestDiffRequestProcessor.createRequestChain(project, listSelection)
+            DiffManager.getInstance().showDiff(project, chain, DiffDialogHints.DEFAULT)
+        }
     }
 }
