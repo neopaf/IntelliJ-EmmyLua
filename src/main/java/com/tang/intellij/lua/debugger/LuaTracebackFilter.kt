@@ -58,7 +58,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
                 ...
             }
         */
-        if(line.matches(expectedRegex))
+        if(line.contains(expectedRegex))
             diffHyperlink = DiffHyperlinkInfo() // pen down
 
         val matcher = filePattern.matcher(line)
@@ -77,7 +77,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         }
 
         if(diffHyperlink != null) {
-            if(line.matches(actualRegex)) {
+            if(line.contains(actualRegex)) {
                 diffHyperlink!!.actual = ""
                 return null
             }
