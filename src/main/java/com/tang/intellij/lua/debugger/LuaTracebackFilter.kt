@@ -79,6 +79,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
                 diffHyperlink!!.actual = ""
                 return null
             }
+            val result = Filter.Result(0, line.length, diffHyperlink)
             if(diffHyperlink!!.actual == null) {
                 diffHyperlink!!.expected = diffHyperlink!!.expected + line + "\n"
             } else {
@@ -86,7 +87,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
                 if(line == "}") // last line of table output
                     diffHyperlink = null // pen up
             }
-            return Filter.Result(0, line.length, diffHyperlink)
+            return result
         }
         return null
     }
