@@ -72,18 +72,18 @@ class LuaTracebackFilter(private val project: Project) : Filter {
                 ...
             }
         */
-        if(line.endsWith("expected:"))
+        if(line.contains("expected\\:"))
             diffHyperlink = DiffHyperlinkInfo() // pen down
         else if(diffHyperlink != null) {
-            if(line.endsWith("actual:")) {
+            if(line.contains("actual\\:")) {
                 diffHyperlink!!.actual = ""
                 return null
             }
-            val result = Filter.Result(0, line.length, diffHyperlink)
+            val result = Filter.Result(entireLength - line.length, entireLength, diffHyperlink)
             if(diffHyperlink!!.actual == null) {
-                diffHyperlink!!.expected = diffHyperlink!!.expected + line + "\n"
+                diffHyperlink!!.expected = diffHyperlink!!.expected + line
             } else {
-                diffHyperlink!!.actual = diffHyperlink!!.actual + line + "\n"
+                diffHyperlink!!.actual = diffHyperlink!!.actual + line
                 if(line == "}") // last line of table output
                     diffHyperlink = null // pen up
             }
