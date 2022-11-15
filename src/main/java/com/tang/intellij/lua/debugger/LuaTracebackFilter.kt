@@ -16,9 +16,16 @@
 
 package com.tang.intellij.lua.debugger
 
+import com.intellij.diff.DiffDialogHints
+import com.intellij.diff.DiffManager
 import com.intellij.execution.filters.Filter
-import com.intellij.execution.filters.OpenFileHyperlinkInfo
+import com.intellij.execution.filters.HyperlinkInfoBase
+import com.intellij.execution.testframework.actions.TestDiffRequestProcessor
+import com.intellij.execution.testframework.actions.ViewAssertEqualsDiffAction
+import com.intellij.execution.testframework.stacktrace.DiffHyperlink
+import com.intellij.openapi.ListSelection
 import com.intellij.openapi.project.Project
+import com.intellij.ui.awt.RelativePoint
 import com.tang.intellij.lua.psi.LuaFileUtil
 import java.util.regex.Pattern
 
@@ -35,6 +42,16 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         //Test.lua:3: in function 'a'
         //Test.lua:7: in function 'b'
         //Test.lua:11: in main chunk
+        /*
+            ...some_test.lua:116: expected:
+            {
+                ...
+            }
+            actual:
+            {
+                ...
+            }
+        */
 
         val matcher = pattern.matcher(line)
         if (matcher.find()) {
@@ -42,7 +59,9 @@ class LuaTracebackFilter(private val project: Project) : Filter {
             val lineNumber = Integer.parseInt(matcher.group(3))
             val file = LuaFileUtil.findFile(project, fileName)
             if (file != null) {
-                val hyperlink = OpenFileHyperlinkInfo(project, file, lineNumber - 1)
+//                val hyperlink = OpenFileHyperlinkInfo(project, file, lineNumber - 1)
+                val hyperlink = DiffHyperlinkInfo()
+
                 val textStartOffset = entireLength - line.length
                 val startPos = matcher.start(1)
                 val endPos = matcher.end(3) + 1
@@ -50,5 +69,14 @@ class LuaTracebackFilter(private val project: Project) : Filter {
             }
         }
         return null
+    }
+
+    class DiffHyperlinkInfo : HyperlinkInfoBase() {
+        override fun navigate(project: Project, hyperlinkLocationPoint: RelativePoint?) {
+            val hyperlink = DiffHyperlink("expected string1", "actual string 1", null, null, true)
+            val listSelection = ListSelection.createSingleton(hyperlink)
+            val chain = TestDiffRequestProcessor.createRequestChain(project, listSelection)
+            DiffManager.getInstance().showDiff(project, chain, DiffDialogHints.DEFAULT)
+        }
     }
 }
