@@ -37,6 +37,9 @@ class LuaTracebackFilter(private val project: Project) : Filter {
 
     private val filePattern: Pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+):")
 
+    private val expectedRegex = Regex("expected\\:\\R")
+    private val actualRegex = Regex("actual\\:\\R")
+
     private var diffHyperlink: DiffHyperlinkInfo? = null
 
     override fun applyFilter(line: String, entireLength: Int): Filter.Result? {
@@ -55,7 +58,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
                 ...
             }
         */
-        if(line.contains("expected:"))
+        if(line.matches(expectedRegex))
             diffHyperlink = DiffHyperlinkInfo() // pen down
 
         val matcher = filePattern.matcher(line)
@@ -74,7 +77,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         }
 
         if(diffHyperlink != null) {
-            if(line.contains("actual:")) {
+            if(line.matches(actualRegex))
                 diffHyperlink!!.actual = ""
                 return null
             }
