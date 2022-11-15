@@ -19,7 +19,6 @@ package com.tang.intellij.lua.debugger
 import com.intellij.diff.DiffDialogHints
 import com.intellij.diff.DiffManager
 import com.intellij.execution.filters.Filter
-import com.intellij.execution.filters.HyperlinkInfo
 import com.intellij.execution.filters.HyperlinkInfoBase
 import com.intellij.execution.filters.OpenFileHyperlinkInfo
 import com.intellij.execution.testframework.actions.TestDiffRequestProcessor
@@ -46,6 +45,18 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         //Test.lua:3: in function 'a'
         //Test.lua:7: in function 'b'
         //Test.lua:11: in main chunk
+        /*
+            ...some_test.lua:116: expected:
+            {
+                ...
+            }
+            actual:
+            {
+                ...
+            }
+        */
+        if(line.contains("expected\\:"))
+            diffHyperlink = DiffHyperlinkInfo() // pen down
 
         val matcher = filePattern.matcher(line)
         if (matcher.find()) {
@@ -62,19 +73,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
             }
         }
 
-        /*
-            ...some_test.lua:116: expected:
-            {
-                ...
-            }
-            actual:
-            {
-                ...
-            }
-        */
-        if(line.contains("expected\\:"))
-            diffHyperlink = DiffHyperlinkInfo() // pen down
-        else if(diffHyperlink != null) {
+        if(diffHyperlink != null) {
             if(line.contains("actual\\:")) {
                 diffHyperlink!!.actual = ""
                 return null
