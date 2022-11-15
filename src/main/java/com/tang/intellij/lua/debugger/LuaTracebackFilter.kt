@@ -77,7 +77,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         }
 
         if(diffHyperlink != null) {
-            if(line.matches(actualRegex))
+            if(line.matches(actualRegex)) {
                 diffHyperlink!!.actual = ""
                 return null
             }
