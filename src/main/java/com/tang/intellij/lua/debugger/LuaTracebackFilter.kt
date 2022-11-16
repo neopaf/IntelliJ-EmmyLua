@@ -35,10 +35,10 @@ import java.util.regex.Pattern
  */
 class LuaTracebackFilter(private val project: Project) : Filter {
 
-    private val filePattern: Pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+):")
+    private val filePattern: Pattern = Pattern.compile("\\s*((/+)?[^<>\\\\|:\"*? ]+):(\\d+)")
 
-    private val expectedRegex = Regex("expected\\:\\s*\\R")
-    private val actualRegex = Regex("actual\\:\\s*\\R")
+    private val expectedRegex = Regex("expected:\\s*\\R")
+    private val actualRegex = Regex("actual:\\s*\\R")
 
     private var diffHyperlink: DiffHyperlinkInfo? = null
 
