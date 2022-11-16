@@ -17,6 +17,7 @@
 package com.tang.intellij.lua.ext
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -29,7 +30,7 @@ class LuaFileFuzzyResolver : ILuaFileResolver {
         val names = shortUrl.split('/')
         val fileName = names.lastOrNull()
         if (fileName != null) {
-            ApplicationManager.getApplication().runReadAction {
+            DumbService.getInstance(project).runReadActionInSmartMode {
                 var perfectMatch = Int.MAX_VALUE
                 for (extName in extNames) {
                     val files = FilenameIndex.getFilesByName(project, "$fileName$extName", ProjectAndLibrariesScope(project))
