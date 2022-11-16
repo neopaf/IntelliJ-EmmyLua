@@ -71,7 +71,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
 
                 val textStartOffset = entireLength - line.length
                 val startPos = matcher.start(1)
-                val endPos = matcher.end(3) + 1
+                val endPos = matcher.end(3)
                 return Filter.Result(startPos + textStartOffset, endPos + textStartOffset, hyperlink)
             }
         }
