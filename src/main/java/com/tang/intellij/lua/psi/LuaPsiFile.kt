@@ -18,6 +18,7 @@ package com.tang.intellij.lua.psi
 
 import com.intellij.extapi.psi.PsiFileBase
 import com.intellij.openapi.fileTypes.FileType
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.psi.FileViewProvider
@@ -67,6 +68,7 @@ open class LuaPsiFile(fileViewProvider: FileViewProvider) : PsiFileBase(fileView
 
     val moduleName: String?
         get() {
+            DumbService.getInstance(project).waitForSmartMode()
             val stub = stub as? LuaFileStub
             return if (stub != null) stub.module else findCachedModuleName()
         }
