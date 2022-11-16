@@ -68,7 +68,7 @@ open class LuaPsiFile(fileViewProvider: FileViewProvider) : PsiFileBase(fileView
 
     val moduleName: String?
         get() {
-            val stub = null // this does not help --> if (DumbService.isDumb(project)) null else stub as? LuaFileStub
+            val stub: LuaFileStub? = null //  --> if (DumbService.isDumb(project)) null else stub as? LuaFileStub
             return if (stub != null) stub.module else findCachedModuleName()
         }
 
