@@ -62,7 +62,7 @@ class LuaTracebackFilter(private val project: Project) : Filter {
             diffHyperlink = DiffHyperlinkInfo() // pen down
 
         val matcher = filePattern.matcher(line)
-        while (matcher.find()) {
+        while  (matcher.find()) {
             val fileName = matcher.group(1).replace(Regex("^\\.\\.\\."), "") // remove leading '...', it confuses finders
             val lineNumber = Integer.parseInt(matcher.group(3))
             val file = LuaFileUtil.findFile(project, fileName)
