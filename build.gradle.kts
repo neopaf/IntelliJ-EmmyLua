@@ -54,6 +54,16 @@ val buildDataList = listOf(
         targetCompatibilityLevel = JavaVersion.VERSION_21,
         buildJdkVersion = JavaVersion.VERSION_25,
         jvmTarget = "21"
+    ),
+    BuildData(
+        ideaSDKShortVersion = "2025.3",
+        ideaSDKVersion = "2025.3",
+        sinceBuild = "253",
+        untilBuild = "253.*",
+        bunch = "212",
+        targetCompatibilityLevel = JavaVersion.VERSION_21,
+        buildJdkVersion = JavaVersion.VERSION_24,
+        jvmTarget = "21"
     )
 )
 
