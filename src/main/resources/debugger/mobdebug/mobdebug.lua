@@ -1,7 +1,8 @@
 --
 -- MobDebug -- Lua remote debugger
--- Copyright 2011-18 Paul Kulchenko
+-- Copyright 2011-20 Paul Kulchenko
 -- Based on RemDebug 1.0 Copyright Kepler Project 2005
+-- copy of https://github.com/neopaf/MobDebug/tree/0.803paf2
 --
 
 -- use loaded modules or load explicitly on those systems that require that
@@ -19,7 +20,7 @@ end)("os")
 
 local mobdebug = {
   _NAME = "mobdebug",
-  _VERSION = "0.703",
+  _VERSION = "0.803paf2",
   _COPYRIGHT = "Paul Kulchenko",
   _DESCRIPTION = "Mobile Remote Debugger for the Lua programming language",
   port = os and os.getenv and tonumber((os.getenv("MOBDEBUG_PORT"))) or 8172,
@@ -51,14 +52,18 @@ local genv = _G or _ENV
 local jit = rawget(genv, "jit")
 local MOAICoroutine = rawget(genv, "MOAICoroutine")
 
--- ngx_lua debugging requires a special handling as its coroutine.*
+-- ngx_lua/Openresty requires special handling as its coroutine.*
 -- methods use a different mechanism that doesn't allow resume calls
 -- from debug hook handlers.
 -- Instead, the "original" coroutine.* methods are used.
--- `rawget` needs to be used to protect against `strict` checks, but
--- ngx_lua hides those in a metatable, so need to use that.
-local metagindex = getmetatable(genv) and getmetatable(genv).__index
-local ngx = type(metagindex) == "table" and metagindex.rawget and metagindex:rawget("ngx") or nil
+-- `rawget` needs to be used to protect against `strict` checks
+local ngx = rawget(genv, "ngx")
+if not ngx then
+  -- "older" versions of ngx_lua (0.10.x at least) hide ngx table in metatable,
+  -- so need to use that
+  local metagindex = getmetatable(genv) and getmetatable(genv).__index
+  ngx = type(metagindex) == "table" and metagindex.rawget and metagindex:rawget("ngx") or nil
+end
 local corocreate = ngx and coroutine._create or coroutine.create
 local cororesume = ngx and coroutine._resume or coroutine.resume
 local coroyield = ngx and coroutine._yield or coroutine.yield
@@ -130,7 +135,7 @@ end
 local function q(s) return string.gsub(s, '([%(%)%.%%%+%-%*%?%[%^%$%]])','%%%1') end
 
 local serpent = (function() ---- include Serpent module for serialization
-local n, v = "serpent", "0.301" -- (C) 2012-17 Paul Kulchenko; MIT License
+local n, v = "serpent", "0.302" -- (C) 2012-18 Paul Kulchenko; MIT License
 local c, d = "Paul Kulchenko", "Lua serializer and pretty printer"
 local snum = {[tostring(1/0)]='1/0 --[[math.huge]]',[tostring(-1/0)]='-1/0 --[[-math.huge]]',[tostring(0/0)]='0/0'}
 local badtype = {thread = true, userdata = true, cdata = true}
@@ -221,7 +226,7 @@ local function s(t, opts)
           local path = seen[t]..'['..tostring(seen[key] or globals[key] or gensym(key))..']'
           sref[#sref] = path..space..'='..space..tostring(seen[value] or val2str(value,nil,indent,path))
         else
-          out[#out+1] = val2str(value,key,indent,insref,seen[t],plainindex,level+1)
+          out[#out+1] = val2str(value,key,indent,nil,seen[t],plainindex,level+1)
           if maxlen then
             maxlen = maxlen - #out[#out]
             if maxlen < 0 then break end
@@ -277,6 +282,10 @@ mobdebug.dump = serpent.dump
 mobdebug.linemap = nil
 mobdebug.loadstring = loadstring
 
+local function get_file_name(url)
+  return url:match("^.+[\\/](.+)$") or url
+end
+
 local function removebasedir(path, basedir)
   if iscasepreserving then
     -- check if the lowercased path matches the basedir
@@ -306,8 +315,7 @@ local function stack(start)
     i = 1
     while true do
       local name, value = debug.getlocal(f, -i)
-      -- `not name` should be enough, but LuaJIT 2.0.0 incorrectly reports `(*temporary)` names here
-      if not name or name ~= "(*vararg)" then break end
+      if not name then break end
       locals[name:gsub("%)$"," "..i..")")] = {value, select(2,pcall(tostring,value))}
       i = i + 1
     end
@@ -341,7 +349,6 @@ local function stack(start)
        linemap and linemap(source.currentline, source.source) or source.currentline,
        source.what, source.namewhat, source.short_src},
       vars(i+1)})
-    if source.what == 'main' then break end
   end
   return stack
 end
@@ -350,19 +357,19 @@ local function set_breakpoint(file, line)
   if file == '-' and lastfile then file = lastfile
   elseif iscasepreserving then file = string.lower(file) end
   if not breakpoints[line] then breakpoints[line] = {} end
-  breakpoints[line][file] = true
+  breakpoints[line][get_file_name(file)] = true
 end
 
 local function remove_breakpoint(file, line)
   if file == '-' and lastfile then file = lastfile
   elseif file == '*' and line == 0 then breakpoints = {}
   elseif iscasepreserving then file = string.lower(file) end
-  if breakpoints[line] then breakpoints[line][file] = nil end
+  if breakpoints[line] then breakpoints[line][get_file_name(file)] = nil end
 end
 
 local function has_breakpoint(file, line)
   return breakpoints[line]
-     and breakpoints[line][iscasepreserving and string.lower(file) or file]
+     and breakpoints[line][get_file_name(iscasepreserving and string.lower(file) or file)]
 end
 
 local function restore_vars(vars)
@@ -442,8 +449,7 @@ local function capture_vars(level, thread)
     else
       name, value = debug.getlocal(level, -i)
     end
-    -- `not name` should be enough, but LuaJIT 2.0.0 incorrectly reports `(*temporary)` names here
-    if not name or name ~= "(*vararg)" then break end
+    if not name then break end
     vars['...'][i] = value
     i = i + 1
   end
@@ -454,7 +460,7 @@ local function capture_vars(level, thread)
   -- including access to globals, but this causes vars[name] to fail in
   -- restore_vars on local variables or upvalues with `nil` values when
   -- 'strict' is in effect. To avoid this `rawget` is used in restore_vars.
-  setmetatable(vars, { __index = getfenv(func), __newindex = getfenv(func) })
+  setmetatable(vars, { __index = getfenv(func), __newindex = getfenv(func), __mode = "v" })
   return vars
 end
 
@@ -492,7 +498,7 @@ local function is_pending(peer)
   -- if there is something already in the buffer, skip check
   if not buf and checkcount >= mobdebug.checkcount then
     peer:settimeout(0) -- non-blocking
-    buf = peer:receive(1)
+--paf   buf = peer:receive(1)
     peer:settimeout() -- back to blocking
     checkcount = 0
   end
@@ -520,7 +526,7 @@ local function handle_breakpoint(peer)
   buf = buf .. readnext(peer, 5-#buf)
   if buf ~= 'SETB ' and buf ~= 'DELB ' then return end
 
-  local res, _, partial = peer:receive() -- get the rest of the line; blocking
+  local res, _, partial = peer:receive("*l") -- get the rest of the line; blocking
   if not res then
     if partial then buf = buf .. partial end
     return
@@ -566,15 +572,18 @@ local function debug_hook(event, line)
   -- 'tail return' events are not generated by LuaJIT).
   -- the next line checks if the debugger is run under LuaJIT and if
   -- one of debugger methods is present in the stack, it simply returns.
-  if jit then
+  -- ngx_lua/Openresty requires a slightly different handling, as it
+  -- creates a coroutine wrapper, so this processing needs to be skipped.
+  if jit and not (ngx and type(ngx) == "table" and ngx.say) then
     -- when luajit is compiled with LUAJIT_ENABLE_LUA52COMPAT,
     -- coroutine.running() returns non-nil for the main thread.
     local coro, main = coroutine.running()
     if not coro or main then coro = 'main' end
     local disabled = coroutines[coro] == false
       or coroutines[coro] == nil and coro ~= (coro_debugee or 'main')
-    if coro_debugee and disabled or not coro_debugee and (disabled or in_debugger())
-    then return end
+    if coro_debugee and disabled or not coro_debugee and (disabled or in_debugger()) then
+      return
+    end
   end
 
   -- (2) check if abort has been requested and it's safe to abort
@@ -646,8 +655,9 @@ local function debug_hook(event, line)
         -- load "foo.lua" (on a case insensitive file system) and breakpoints
         -- set on foo.lua will not work if not converted to the same case.
         if iscasepreserving then file = string.lower(file) end
-        if find(file, "^%./") then file = sub(file, 3)
-        else file = gsub(file, "^"..q(basedir), "") end
+        if find(file, "^%./") then file = sub(file, 3) end
+        -- remove basedir, so that breakpoints are checked properly
+        file = gsub(file, "^"..q(basedir), "")
         -- some file systems allow newlines in file names; remove these.
         file = gsub(file, "\n", ' ')
       else
@@ -726,9 +736,9 @@ local function stringify_results(params, status, ...)
   if params.nocode == nil then params.nocode = true end
   if params.comment == nil then params.comment = 1 end
 
-  local t = {...}
-  for i,v in pairs(t) do -- stringify each of the returned values
-    local ok, res = pcall(mobdebug.line, v, params)
+  local t = {}
+  for i = 1, select('#', ...) do -- stringify each of the returned values
+    local ok, res = pcall(mobdebug.line, select(i, ...), params)
     t[i] = ok and res or ("%q"):format(res):gsub("\010","n"):gsub("\026","\\026")
   end
   -- stringify table with all returned values
@@ -759,11 +769,11 @@ local function done()
   coro_debugger = nil -- to make sure isrunning() returns `false`
   seen_hook = nil -- to make sure that the next start() call works
   abort = nil -- to make sure that callback calls use proper "abort" value
+  basedir = "" -- to reset basedir in case the same module/state is reused
 end
 
 local function debugger_loop(sev, svars, sfile, sline)
   local command
-  local app, osname
   local eval_env = svars or {}
   local function emptyWatch () return false end
   local loaded = {}
@@ -771,34 +781,17 @@ local function debugger_loop(sev, svars, sfile, sline)
 
   while true do
     local line, err
-    local wx = rawget(genv, "wx") -- use rawread to make strict.lua happy
-    if (wx or mobdebug.yield) and server.settimeout then server:settimeout(mobdebug.yieldtimeout) end
+    if mobdebug.yield and server.settimeout then server:settimeout(mobdebug.yieldtimeout) end
     while true do
-      line, err = server:receive()
-      if not line and err == "timeout" then
-        -- yield for wx GUI applications if possible to avoid "busyness"
-        app = app or (wx and wx.wxGetApp and wx.wxGetApp())
-        if app then
-          local win = app:GetTopWindow()
-          local inloop = app:IsMainLoopRunning()
-          osname = osname or wx.wxPlatformInfo.Get():GetOperatingSystemFamilyName()
-          if win and not inloop then
-            -- process messages in a regular way
-            -- and exit as soon as the event loop is idle
-            if osname == 'Unix' then wx.wxTimer(app):Start(10, true) end
-            local exitLoop = function()
-              win:Disconnect(wx.wxID_ANY, wx.wxID_ANY, wx.wxEVT_IDLE)
-              win:Disconnect(wx.wxID_ANY, wx.wxID_ANY, wx.wxEVT_TIMER)
-              app:ExitMainLoop()
-            end
-            win:Connect(wx.wxEVT_IDLE, exitLoop)
-            win:Connect(wx.wxEVT_TIMER, exitLoop)
-            app:MainLoop()
-          end
-        elseif mobdebug.yield then mobdebug.yield()
+      line, err = server:receive("*l")
+      if not line then
+        if err == "timeout" then
+          if mobdebug.yield then mobdebug.yield() end
+        elseif err == "closed" then
+          error("Debugger connection closed", 0)
+        else
+          error(("Unexpected socket error: %s"):format(err), 0)
         end
-      elseif not line and err == "closed" then
-        error("Debugger connection closed", 0)
       else
         -- if there is something in the pending buffer, prepend it to the line
         if buf then line = buf .. line; buf = nil end
@@ -839,7 +832,7 @@ local function debugger_loop(sev, svars, sfile, sline)
           -- with a specific stack frame: `capture_vars(0, coro_debugee)`
           local env = stack and coro_debugee and capture_vars(stack-1, coro_debugee) or eval_env
           setfenv(func, env)
-          status, res = stringify_results(params, pcall(func, unpack(env['...'] or {})))
+          status, res = stringify_results(params, pcall(func, unpack(rawget(env,'...') or {})))
         end
         if status then
           if mobdebug.onscratch then mobdebug.onscratch(res) end
@@ -1087,33 +1080,6 @@ local function start(controller_host, controller_port)
     -- start from 16th frame, which is sufficiently large for this check.
     stack_level = stack_depth(16)
 
-    -- provide our own traceback function to report errors remotely
-    -- but only under Lua 5.1/LuaJIT as it's not called under Lua 5.2+
-    -- (http://lua-users.org/lists/lua-l/2016-05/msg00297.html)
-    local function f() return function()end end
-    if f() ~= f() then -- Lua 5.1 or LuaJIT
-      local dtraceback = debug.traceback
-      debug.traceback = function (...)
-        if select('#', ...) >= 1 then
-          local thr, err, lvl = ...
-          if type(thr) ~= 'thread' then err, lvl = thr, err end
-          local trace = dtraceback(err, (lvl or 1)+1)
-          if genv.print == iobase.print then -- no remote redirect
-            return trace
-          else
-            genv.print(trace) -- report the error remotely
-            return -- don't report locally to avoid double reporting
-          end
-        end
-        -- direct call to debug.traceback: return the original.
-        -- debug.traceback(nil, level) doesn't work in Lua 5.1
-        -- (http://lua-users.org/lists/lua-l/2011-06/msg00574.html), so
-        -- simply remove first frame from the stack trace
-        local tb = dtraceback("", 2) -- skip debugger frames
-        -- if the string is returned, then remove the first new line as it's not needed
-        return type(tb) == "string" and tb:gsub("^\n","") or tb
-      end
-    end
     coro_debugger = corocreate(debugger_loop)
     debug.sethook(debug_hook, HOOKMASK)
     seen_hook = nil -- reset in case the last start() call was refused
@@ -1177,7 +1143,7 @@ local function controller(controller_host, controller_port, scratchpad)
           -- check if the debugging is done (coro_debugger is nil)
           if not coro_debugger then break end
           -- resume once more to clear the response the debugger wants to send
-          -- need to use capture_vars(0) to capture only two (default) level,
+          -- need to use capture_vars(0) to capture only two (default) levels,
           -- as even though there is controller() call, because of the tail call,
           -- the caller may not exist for it;
           -- This is not entirely safe as the user may see the local
@@ -1260,10 +1226,10 @@ local function handle(params, client, options)
   if command == "run" or command == "step" or command == "out"
   or command == "over" or command == "exit" then
     client:send(string.upper(command) .. "\n")
-    client:receive() -- this should consume the first '200 OK' response
+    client:receive("*l") -- this should consume the first '200 OK' response
     while true do
       local done = true
-      local breakpoint = client:receive()
+      local breakpoint = client:receive("*l")
       if not breakpoint then
         print("Program finished")
         return nil, nil, false
@@ -1316,7 +1282,7 @@ local function handle(params, client, options)
         file = removebasedir(file, basedir)
       end
       client:send("SETB " .. file .. " " .. line .. "\n")
-      if command == "asetb" or client:receive() == "200 OK" then
+      if command == "asetb" or client:receive("*l") == "200 OK" then
         set_breakpoint(file, line)
       else
         print("Error: breakpoint not inserted")
@@ -1328,7 +1294,7 @@ local function handle(params, client, options)
     local _, _, exp = string.find(params, "^[a-z]+%s+(.+)$")
     if exp then
       client:send("SETW " .. exp .. "\n")
-      local answer = client:receive()
+      local answer = client:receive("*l")
       local _, _, watch_idx = string.find(answer, "^200 OK (%d+)%s*$")
       if watch_idx then
         watches[watch_idx] = exp
@@ -1354,7 +1320,7 @@ local function handle(params, client, options)
         file = removebasedir(file, basedir)
       end
       client:send("DELB " .. file .. " " .. line .. "\n")
-      if command == "adelb" or client:receive() == "200 OK" then
+      if command == "adelb" or client:receive("*l") == "200 OK" then
         remove_breakpoint(file, line)
       else
         print("Error: breakpoint not removed")
@@ -1365,7 +1331,7 @@ local function handle(params, client, options)
   elseif command == "delallb" then
     local file, line = "*", 0
     client:send("DELB " .. file .. " " .. tostring(line) .. "\n")
-    if client:receive() == "200 OK" then
+    if client:receive("*l") == "200 OK" then
       remove_breakpoint(file, line)
     else
       print("Error: all breakpoints not removed")
@@ -1374,7 +1340,7 @@ local function handle(params, client, options)
     local _, _, index = string.find(params, "^[a-z]+%s+(%d+)%s*$")
     if index then
       client:send("DELW " .. index .. "\n")
-      if client:receive() == "200 OK" then
+      if client:receive("*l") == "200 OK" then
         watches[index] = nil
       else
         print("Error: watch expression not removed")
@@ -1385,7 +1351,7 @@ local function handle(params, client, options)
   elseif command == "delallw" then
     for index, exp in pairs(watches) do
       client:send("DELW " .. index .. "\n")
-      if client:receive() == "200 OK" then
+      if client:receive("*l") == "200 OK" then
         watches[index] = nil
       else
         print("Error: watch expression at index " .. index .. " [" .. exp .. "] not removed")
@@ -1397,9 +1363,7 @@ local function handle(params, client, options)
     local _, _, exp = string.find(params, "^[a-z]+%s+(.+)$")
     if exp or (command == "reload") then
       if command == "eval" or command == "exec" then
-        exp = (exp:gsub("%-%-%[(=*)%[.-%]%1%]", "") -- remove comments
-                  :gsub("%-%-.-\n", " ") -- remove line comments
-                  :gsub("\n", " ")) -- convert new lines
+        exp = exp:gsub("\n", "\r") -- convert new lines, so the fragment can be passed as one line
         if command == "eval" then exp = "return " .. exp end
         client:send("EXEC " .. exp .. "\n")
       elseif command == "reload" then
@@ -1425,13 +1389,13 @@ local function handle(params, client, options)
         local lines = file:read("*all"):gsub("^#!.-\n", "\n")
         file:close()
 
-        local file = string.gsub(exp, "\\", "/") -- convert slash
-        file = removebasedir(file, basedir)
-        client:send("LOAD " .. tostring(#lines) .. " " .. file .. "\n")
+        local fname = string.gsub(exp, "\\", "/") -- convert slash
+        fname = removebasedir(fname, basedir)
+        client:send("LOAD " .. tostring(#lines) .. " " .. fname .. "\n")
         if #lines > 0 then client:send(lines) end
       end
       while true do
-        local params, err = client:receive()
+        local params, err = client:receive("*l")
         if not params then
           return nil, nil, "Debugger connection " .. (err or "error")
         end
@@ -1502,7 +1466,7 @@ local function handle(params, client, options)
   elseif command == "stack" then
     local opts = string.match(params, "^[a-z]+%s+(.+)$")
     client:send("STACK" .. (opts and " "..opts or "") .."\n")
-    local resp = client:receive()
+    local resp = client:receive("*l")
     local _, _, status, res = string.find(resp, "^(%d+)%s+%w+%s+(.+)%s*$")
     if status == "200" then
       local func, err = loadstring(res)
@@ -1533,7 +1497,7 @@ local function handle(params, client, options)
     local _, _, stream, mode = string.find(params, "^[a-z]+%s+(%w+)%s+([dcr])%s*$")
     if stream and mode then
       client:send("OUTPUT "..stream.." "..mode.."\n")
-      local resp, err = client:receive()
+      local resp, err = client:receive("*l")
       if not resp then
         print("Unknown error: "..err)
         return nil, nil, "Debugger connection error: "..err
@@ -1563,7 +1527,7 @@ local function handle(params, client, options)
       basedir = dir
 
       client:send("BASEDIR "..(remdir or dir).."\n")
-      local resp, err = client:receive()
+      local resp, err = client:receive("*l")
       if not resp then
         print("Unknown error: "..err)
         return nil, nil, "Debugger connection error: "..err
@@ -1626,9 +1590,9 @@ local function listen(host, port)
   local client = server:accept()
 
   client:send("STEP\n")
-  client:receive()
+  client:receive("*l")
 
-  local breakpoint = client:receive()
+  local breakpoint = client:receive("*l")
   local _, _, file, line = string.find(breakpoint, "^202 Paused%s+(.-)%s+(%d+)%s*$")
   if file and line then
     print("Paused at file " .. file )
@@ -1643,7 +1607,7 @@ local function listen(host, port)
 
   while true do
     io.write("> ")
-    local file, line, err = handle(io.read("*line"), client)
+    local file, _, err = handle(io.read("*line"), client)
     if not file and err == false then break end -- completed debugging
   end
 
