@@ -16,14 +16,13 @@
 
 package com.tang.intellij.lua.debugger
 
+import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffDialogHints
 import com.intellij.diff.DiffManager
+import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.execution.filters.Filter
 import com.intellij.execution.filters.HyperlinkInfoBase
 import com.intellij.execution.filters.OpenFileHyperlinkInfo
-import com.intellij.execution.testframework.actions.TestDiffRequestProcessor
-import com.intellij.execution.testframework.stacktrace.DiffHyperlink
-import com.intellij.openapi.ListSelection
 import com.intellij.openapi.project.Project
 import com.intellij.ui.awt.RelativePoint
 import com.tang.intellij.lua.psi.LuaFileUtil
@@ -98,10 +97,17 @@ class LuaTracebackFilter(private val project: Project) : Filter {
         var expected: String = ""
         var actual: String? = null
         override fun navigate(project: Project, hyperlinkLocationPoint: RelativePoint?) {
-            val hyperlink = DiffHyperlink(expected, actual!!, null, null, true)
-            val listSelection = ListSelection.createSingleton(hyperlink)
-            val chain = TestDiffRequestProcessor.createRequestChain(project, listSelection)
-            DiffManager.getInstance().showDiff(project, chain, DiffDialogHints.DEFAULT)
+            val contentFactory = DiffContentFactory.getInstance()
+            val expectedContent = contentFactory.create(project, expected)
+            val actualContent = contentFactory.create(project, actual ?: "")
+            val request = SimpleDiffRequest(
+                "Expected vs Actual",
+                expectedContent,
+                actualContent,
+                "Expected",
+                "Actual"
+            )
+            DiffManager.getInstance().showDiff(project, request, DiffDialogHints.DEFAULT)
         }
     }
 }
