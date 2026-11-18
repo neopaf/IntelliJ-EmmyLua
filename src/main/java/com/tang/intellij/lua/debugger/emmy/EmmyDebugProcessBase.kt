@@ -19,13 +19,13 @@ package com.tang.intellij.lua.debugger.emmy
 import com.google.gson.Gson
 import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.util.Key
 import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.XSourcePosition
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint
 import com.intellij.xdebugger.evaluation.XDebuggerEditorsProvider
 import com.intellij.xdebugger.frame.XSuspendContext
-import com.intellij.xdebugger.impl.XDebugSessionImpl
 import com.tang.intellij.lua.debugger.*
 import com.tang.intellij.lua.psi.LuaFileManager
 import com.tang.intellij.lua.psi.LuaFileUtil
@@ -34,7 +34,13 @@ import java.io.File
 abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(session), ITransportHandler {
     private val editorsProvider = LuaDebuggerEditorsProvider()
     private val evalHandlers = mutableListOf<IEvalResultHandler>()
+    private val breakpoints = mutableMapOf<Int, BreakPoint>()
+    private var idCounter = 0;
     protected var transporter: Transporter? = null
+
+    companion object {
+        private val ID = Key.create<Int>("lua.breakpoint")
+    }
 
     override fun sessionInitialized() {
         super.sessionInitialized()
@@ -50,13 +56,13 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
         val path = LuaFileUtil.getPluginVirtualFile("debugger/emmy/emmyHelper.lua")
         if (path != null) {
             val code = File(path).readText()
-            val extList = LuaFileManager.getInstance().extensions
+            val extList = LuaFileManager.extensions
             transporter?.send(InitMessage(code, extList))
         }
         // send bps
         val breakpoints = XDebuggerManager.getInstance(session.project)
-                .breakpointManager
-                .getBreakpoints(LuaLineBreakpointType::class.java)
+            .breakpointManager
+            .getBreakpoints(LuaLineBreakpointType::class.java)
         breakpoints.forEach { breakpoint ->
             breakpoint.sourcePosition?.let { position ->
                 registerBreakpoint(position, breakpoint)
@@ -71,8 +77,7 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
             ApplicationManager.getApplication().runReadAction {
                 sendInitReq()
             }
-        }
-        else stop()
+        } else stop()
     }
 
     override fun onDisconnect() {
@@ -86,14 +91,17 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
                 val data = Gson().fromJson(json, BreakNotify::class.java)
                 onBreak(data)
             }
+
             MessageCMD.EvalRsp -> {
                 val rsp = Gson().fromJson(json, EvalRsp::class.java)
                 onEvalRsp(rsp)
             }
+
             MessageCMD.LogNotify -> {
                 val notify = Gson().fromJson(json, LogNotify::class.java)
                 println(notify.message, LogConsoleType.NORMAL, ConsoleViewContentType.SYSTEM_OUTPUT)
             }
+
             else -> {
                 println("Unknown message: $cmd")
             }
@@ -104,11 +112,19 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
         val file = sourcePosition.file
         val shortPath = file.canonicalPath
         if (shortPath != null) {
-            if(breakpoint.isLogMessage){
-                send(AddBreakPointReq(listOf(BreakPoint(shortPath, breakpoint.line+1,null, breakpoint.logExpressionObject?.expression))))
+            val newId = idCounter++
+            breakpoint.putUserData(ID, newId)
+
+            if (breakpoint.isLogMessage) {
+                breakpoints[newId] =
+                    BreakPoint(shortPath, breakpoint.line + 1, null, breakpoint.logExpressionObject?.expression)
+            } else {
+                breakpoints[newId] =
+                    BreakPoint(shortPath, breakpoint.line + 1, breakpoint.conditionExpression?.expression)
             }
-            else {
-                send(AddBreakPointReq(listOf(BreakPoint(shortPath, breakpoint.line + 1, breakpoint.conditionExpression?.expression))))
+            val bp = breakpoints.getOrDefault(newId, null)
+            if (bp != null) {
+                send(AddBreakPointReq(listOf(bp)))
             }
         }
     }
@@ -117,7 +133,12 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
         val file = sourcePosition.file
         val shortPath = file.canonicalPath
         if (shortPath != null) {
-            send(RemoveBreakPointReq(listOf(BreakPoint(shortPath, breakpoint.line + 1))))
+            val id = breakpoint.getUserData(ID)
+            val bp = breakpoints.getOrDefault(id, null)
+            if (bp != null) {
+                breakpoints.remove(id)
+                send(RemoveBreakPointReq(listOf(bp)))
+            }
         }
     }
 
@@ -126,15 +147,15 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
     }
 
     override fun runToPosition(position: XSourcePosition, context: XSuspendContext?) {
-        send(AddBreakPointReq(listOf(BreakPoint(position.file.path, position.line + 1, null,null,null))))
+        send(AddBreakPointReq(listOf(BreakPoint(position.file.path, position.line + 1, null, null, null))))
     }
 
     private fun onBreak(data: BreakNotify) {
         evalHandlers.clear()
         val frames = data.stacks.map { EmmyDebugStackFrame(it, this) }
         val top = frames.firstOrNull { it.sourcePosition != null }
-                ?: frames.firstOrNull { it.data.line > 0 }
-                ?: frames.firstOrNull()
+            ?: frames.firstOrNull { it.data.line > 0 }
+            ?: frames.firstOrNull()
         val stack = LuaExecutionStack(frames)
         if (top != null)
             stack.setTopFrame(top)
@@ -146,11 +167,13 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
             }
         } else {
             ApplicationManager.getApplication().invokeLater {
-                val se = session
+                // todo: fix "Internal classes usages" & "Internal methods usages" problem
+                /*val se = session
                 if (se is XDebugSessionImpl)
                     se.positionReached(LuaSuspendContext(stack), true)
                 else
-                    se.positionReached(LuaSuspendContext(stack))
+                    se.positionReached(LuaSuspendContext(stack))*/
+                session.positionReached(LuaSuspendContext(stack))
                 session.showExecutionPoint()
             }
         }

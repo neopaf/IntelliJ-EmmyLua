@@ -16,8 +16,8 @@
 
 package com.tang.intellij.lua.hierarchy.call
 
+import com.intellij.CommonBundle
 import com.intellij.icons.AllIcons
-import com.intellij.ide.IdeBundle
 import com.intellij.ide.hierarchy.HierarchyNodeDescriptor
 import com.intellij.openapi.roots.ui.util.CompositeAppearance
 import com.intellij.openapi.util.Comparing
@@ -52,7 +52,7 @@ class LuaHierarchyNodeDescriptor(parentDescriptor: HierarchyNodeDescriptor?, ele
 
         val element = psiElement as NavigatablePsiElement?
         if (element == null) {
-            val invalidPrefix = IdeBundle.message("node.hierarchy.invalid")
+            val invalidPrefix = CommonBundle.getErrorTitle()
             if (!myHighlightedText.text.startsWith(invalidPrefix)) {
                 myHighlightedText.beginning.addText(invalidPrefix, HierarchyNodeDescriptor.getInvalidPrefixAttributes())
             }

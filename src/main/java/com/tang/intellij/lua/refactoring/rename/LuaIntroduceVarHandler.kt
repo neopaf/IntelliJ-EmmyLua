@@ -22,9 +22,7 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Pass
-import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import com.intellij.psi.*
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.RefactoringActionHandler
 import com.intellij.refactoring.introduce.inplace.InplaceVariableIntroducer
@@ -106,29 +104,34 @@ class LuaIntroduceVarHandler : RefactoringActionHandler {
 
         var commonParent = PsiTreeUtil.findCommonParent(operation.occurrences)
         if (commonParent != null) {
-            var element = operation.element
+            val pointers = mutableListOf<SmartPsiElementPointer<PsiElement>>()
+            var positionIndex = 0
+            val element = operation.element
             var localDef = LuaElementFactory.createWith(operation.project, "local var = " + element.text)
             val inline = isInline(commonParent, operation)
             if (inline) {
-                if (element is LuaCallExpr && element.parent is LuaExprStat)
-                    element = element.parent
-                localDef = element.replace(localDef)
-                operation.position = localDef
+                val targetToReplace = if (element is LuaCallExpr && element.parent is LuaExprStat) element.parent else element
+                localDef = targetToReplace.replace(localDef)
+                pointers.add(localDef.createSmartPointer())
             } else {
                 val anchor = findAnchor(operation.occurrences)
                 commonParent = anchor?.parent
                 localDef = commonParent!!.addBefore(localDef, anchor)
                 commonParent.addAfter(LuaElementFactory.newLine(operation.project), localDef)
-                operation.occurrences.forEach { occ->
-                    var identifier = LuaElementFactory.createName(operation.project, operation.name)
-                    identifier = occ.replace(identifier)
-                    operation.newOccurrences.add(identifier)
-                    if (occ == operation.element)
-                        operation.position = identifier
+                operation.occurrences.forEachIndexed { index, occ ->
+                    val identifier = occ.replace(LuaElementFactory.createName(operation.project, operation.name))
+                    pointers.add(identifier.createSmartPointer())
+                    if (occ == operation.element) {
+                        positionIndex = index
+                    }
                 }
             }
 
             localDef = CodeInsightUtilCore.forcePsiPostprocessAndRestoreElement(localDef) ?: return
+
+            operation.newOccurrences.addAll(pointers.map { it.element!! })
+            operation.position = operation.newOccurrences[positionIndex]
+
             val nameDef = PsiTreeUtil.findChildOfType(localDef, LuaNameDef::class.java)
             if (nameDef != null)
                 operation.editor.caretModel.moveToOffset(nameDef.textOffset)

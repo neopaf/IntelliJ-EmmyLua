@@ -30,30 +30,41 @@ import com.tang.intellij.lua.ty.ITyClass
 class LuaShortNamesManagerImpl : LuaShortNamesManager() {
 
     override fun findClass(name: String, context: SearchContext): LuaClass? {
+        if (context.forStub) return null
         return LuaClassIndex.find(name, context)
     }
 
-    override fun findMember(type: ITyClass, fieldName: String, context: SearchContext): LuaClassMember? {
-        return LuaClassMemberIndex.find(type, fieldName, context)
-    }
-
-    override fun processAllClassNames(project: Project, processor: Processor<String>): Boolean {
+    override fun processClassNames(project: Project, processor: Processor<String>): Boolean {
         return LuaClassIndex.processKeys(project, processor)
     }
 
     override fun processClassesWithName(name: String, context: SearchContext, processor: Processor<LuaClass>): Boolean {
-        return LuaClassIndex.process(name, context.project, context.scope, Processor { processor.process(it) })
+        return LuaClassIndex.process(name, context.project, context.scope) { processor.process(it) }
     }
 
     override fun getClassMembers(clazzName: String, context: SearchContext): Collection<LuaClassMember> {
+        if (context.forStub) return emptyList()
         return LuaClassMemberIndex.instance.get(clazzName.hashCode(), context.project, context.scope)
     }
 
-    override fun processAllMembers(type: ITyClass, fieldName: String, context: SearchContext, processor: Processor<LuaClassMember>): Boolean {
-        return LuaClassMemberIndex.processAll(type, fieldName, context, processor)
+    override fun processMembers(type: ITyClass, context: SearchContext, processor: Processor<LuaClassMember>): Boolean {
+        if (context.forStub) return true;
+        return LuaClassMemberIndex.processAll(type, context, processor)
+    }
+
+    override fun processMembers(
+        className: String,
+        fieldName: String,
+        context: SearchContext,
+        processor: Processor<LuaClassMember>,
+        visitSuper: Boolean
+    ): Boolean {
+        if (context.forStub) return true;
+        return LuaClassMemberIndex.process(className, fieldName, context, processor, visitSuper)
     }
 
     override fun findAlias(name: String, context: SearchContext): LuaTypeAlias? {
+        if (context.forStub) return null
         return LuaAliasIndex.find(name, context)
     }
 

@@ -21,8 +21,6 @@
     <depends>com.intellij.modules.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <errorHandler implementation="com.tang.intellij.lua.errorreporting.GitHubErrorReporter"/>
-
         <!--LuaCheck-->
         <toolWindow id="LuaCheck"
                     anchor="bottom"
