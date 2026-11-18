@@ -69,7 +69,7 @@
     ]]></description>
 
     <change-notes><![CDATA[
-    <strong>1.4.16-paf1</strong>
+    <strong>1.4.26-paf1</strong>
     <ul>
         <li>[FIX] mobdebug upgraded to https://github.com/neopaf/MobDebug/tree/0.803paf2</li>
         <li>luaunit support</li>
