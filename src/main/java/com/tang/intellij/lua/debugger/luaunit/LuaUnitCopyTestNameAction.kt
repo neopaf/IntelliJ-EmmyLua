@@ -40,8 +40,17 @@ class LuaUnitCopyTestNameAction : AnAction("Copy Test Name", null, AllIcons.Acti
 
     override fun update(event: AnActionEvent) {
         val model = event.getData(TestTreeView.MODEL_DATA_KEY)
+        val tree = SMTRunnerTestTreeView.SM_TEST_RUNNER_VIEW.getData(event.dataContext)
+        val selected = tree?.selectedTest
         event.presentation.isEnabled =
             model?.properties?.configuration is LuaUnitRunConfiguration
+        // The menu says what it copies: a case keeps its own name, a group
+        // (a file, a section) is a group.
+        event.presentation.text = when {
+            selected == null -> "Copy Test Name"
+            selected.isLeaf -> "Copy Test Name"
+            else -> "Copy Test Group Name"
+        }
     }
 
     override fun actionPerformed(event: AnActionEvent) {

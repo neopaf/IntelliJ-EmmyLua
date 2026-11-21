@@ -273,6 +273,23 @@ class LuaUnitTestConsole(
 
                 override fun getSourceActions(component: javax.swing.JComponent): Int = COPY
             }
+            // The copy action gets the platform's native shortcut (Cmd+C on
+            // macOS, Ctrl+C elsewhere) RIGHT ON THE TREE: a shortcut
+            // registered on the component wins over the global $Copy while
+            // the tree has the focus, and the menu shows it by the item.
+            val copyAction = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+                .getAction("LuaUnit.CopyTestName")
+            if (copyAction != null) {
+                val mask = java.awt.Toolkit.getDefaultToolkit().menuShortcutKeyMask
+                copyAction.registerCustomShortcutSet(
+                    com.intellij.openapi.actionSystem.CustomShortcutSet(
+                        com.intellij.openapi.actionSystem.KeyboardShortcut(
+                            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C, mask), null
+                        )
+                    ),
+                    tree
+                )
+            }
         }
         return consoleView
     }

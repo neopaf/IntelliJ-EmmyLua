@@ -20,7 +20,12 @@ import com.intellij.ide.actions.QualifiedNameProvider
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
+import com.intellij.psi.util.PsiTreeUtil
+import com.tang.intellij.lua.debugger.luaunit.LuaUnitCaseAtCaret
+import com.tang.intellij.lua.psi.LuaClassMethodDef
 import com.tang.intellij.lua.psi.LuaFileUtil
+import com.tang.intellij.lua.psi.LuaFuncDef
+import com.tang.intellij.lua.psi.LuaLocalFuncDef
 import com.tang.intellij.lua.psi.LuaPsiFile
 
 /**
@@ -38,7 +43,13 @@ class LuaQualifiedNameProvider : QualifiedNameProvider {
             val project = psiElement.project
             return LuaFileUtil.asRequirePath(project, virtualFile)
         }
-        return null
+        // A LuaUnit case declaration: Copy Reference on it produces the
+        // case's full LuaUnit name ("TestSuite.test_x").
+        val func = PsiTreeUtil.getParentOfType(psiElement, LuaClassMethodDef::class.java, false)
+            ?: PsiTreeUtil.getParentOfType(psiElement, LuaFuncDef::class.java, false)
+            ?: PsiTreeUtil.getParentOfType(psiElement, LuaLocalFuncDef::class.java, false)
+            ?: return null
+        return LuaUnitCaseAtCaret.find(psiElement.containingFile, func)?.name
     }
 
     override fun qualifiedNameToElement(s: String, project: Project): PsiElement? {
