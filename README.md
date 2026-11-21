@@ -14,6 +14,18 @@
 QQ交流群：1群：`29850775` 2群：`529914962`
 (最新版本以及部分视频演示在群文件中下载)
 
+## What's in this fork
+
+Besides the upstream features below, this fork adds a **JUnit-style LuaUnit
+test runner**: gutter Run/Debug icons on test cases and data rows, a test
+tree with sections, per-case output, expected/actual diffs, ignored
+(`luaunit.skip`) and commented-out cases, rerun-failed, and mobdebug-based
+debugging. It is driven by a `run_tests.lua` manifest and needs no build step
+or extra dependencies on the Lua side.
+
+See [LUAUNIT.md](LUAUNIT.md) for the full description (layout, discovery
+rules, run configuration, console).
+
 ![snapshot](/snapshot/overview.gif)
 
 ## Find usages

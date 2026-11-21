@@ -85,7 +85,7 @@
         <highlightVisitor implementation="com.tang.intellij.lua.codeInsight.LuaRainbowVisitor"/>
         <highlightUsagesHandlerFactory implementation="com.tang.intellij.lua.codeInsight.highlighting.LuaHighlightUsagesHandlerFactory"/>
         <readWriteAccessDetector implementation="com.tang.intellij.lua.codeInsight.LuaReadWriteAccessDetector"/>
-        
+
         <!--hierarchy-->
         <callHierarchyProvider language="Lua" implementationClass="com.tang.intellij.lua.hierarchy.call.LuaCallHierarchyProvider"/>
 
@@ -128,6 +128,11 @@
 
         <!-- runner & debugger -->
         <runConfigurationProducer implementation="com.tang.intellij.lua.debugger.LuaRunConfigurationProducer"/>
+        <runConfigurationProducer implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitRunConfigurationProducer"/>
+        <runLineMarkerContributor language="Lua" implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitRunLineMarkerContributor"/>
+        <programRunner implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProgramRunner"/>
+        <configurationType implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitConfigurationType"/>
+        <postStartupActivity implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProjectActivity"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.remote.LuaMobDebuggerRunner"/>
         <configurationType implementation="com.tang.intellij.lua.debugger.remote.LuaMobConfigurationType"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.app.LuaAppRunner"/>
@@ -334,7 +339,7 @@
         <group id="LuaCallHierarchyPopupMenu">
             <reference ref="EditSource"/>
         </group>
-        
+
         <action class="com.tang.intellij.lua.actions.CreateLuaFileAction"
                 text="Lua File"
                 id="lua.newFile">

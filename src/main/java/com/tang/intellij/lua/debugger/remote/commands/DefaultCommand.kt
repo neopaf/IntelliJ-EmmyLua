@@ -33,6 +33,8 @@ open class DefaultCommand(private val commandline: String, private val requireRe
         writer.write(commandline)
     }
 
+    override fun describe(): String = commandline
+
     override fun handle(data: String): Int {
         val lb = data.indexOf('\n')
         return if (lb == -1) {

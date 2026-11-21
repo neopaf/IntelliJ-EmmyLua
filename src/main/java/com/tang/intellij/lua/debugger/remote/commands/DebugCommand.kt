@@ -27,6 +27,9 @@ abstract class DebugCommand {
 
     lateinit var debugProcess: LuaMobDebugProcess
 
+    /** The wire form, for the idea.log diagnostics of the command queue. */
+    open fun describe(): String = this::class.simpleName ?: "command"
+
     abstract fun isFinished(): Boolean
 
     abstract fun getRequireRespLines(): Int

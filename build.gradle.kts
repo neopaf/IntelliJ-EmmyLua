@@ -187,7 +187,30 @@ project(":") {
             java.srcDirs("gen", "src/main/compat")
             resources.exclude("debugger/**")
             resources.exclude("std/**")
+            // The LuaUnit runner is a plain Lua script, not a resource of the
+            // library: it gets its own jar so it is a real file on disk (Lua
+            // cannot load a script from inside another jar).
+            resources.exclude("luaunit/**")
         }
+    }
+
+    /**
+     * The `luaunit/` scripts as a jar of their own. The platform puts each jar
+     * of a plugin's `lib/` on the disk as a file, so the runner gets a path
+     * `java.io.File` can see and `io.open` can read.
+     */
+    val luaUnitJar by tasks.registering(Jar::class) {
+        archiveBaseName.set("luaunit")
+        // installEmmyDebugger writes into src/main/resources; this task reads
+        // from it, so the order must be explicit.
+        dependsOn("installEmmyDebugger")
+        from(layout.projectDirectory.dir("src/main/resources/luaunit")) {
+            into("luaunit")
+        }
+    }
+
+    dependencies {
+        implementation(files(luaUnitJar))
     }
 
     /*configure<JavaPluginConvention> {

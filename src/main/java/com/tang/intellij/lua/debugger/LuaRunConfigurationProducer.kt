@@ -38,6 +38,24 @@ class LuaRunConfigurationProducer : LazyRunConfigurationProducer<LuaAppRunConfig
         val element = ref.get()
         val containingFile = element.containingFile as? LuaPsiFile ?: return false
 
+        // A file of a LuaUnit suite belongs to the test runner: its gutter
+        // markers come from LuaUnit, and a plain Lua run entry would only
+        // duplicate them.
+        val virtualFile = containingFile.virtualFile ?: return false
+        val path = java.nio.file.Path.of(virtualFile.path)
+        val manifest = com.tang.intellij.lua.debugger.luaunit.LuaTestManifest.findManifest(path)
+        if (manifest != null) {
+            val inSuite = try {
+                com.tang.intellij.lua.debugger.luaunit.LuaTestManifest.files(manifest)
+                    .any { it.toAbsolutePath().normalize() == path.toAbsolutePath().normalize() }
+            } catch (e: Exception) {
+                false
+            }
+            if (inSuite) {
+                return false
+            }
+        }
+
         luaAppRunConfiguration.debuggerType = DebuggerType.Mob
         luaAppRunConfiguration.file = LuaFileUtil.getShortPath(element.project, containingFile.virtualFile)
         luaAppRunConfiguration.name = containingFile.name

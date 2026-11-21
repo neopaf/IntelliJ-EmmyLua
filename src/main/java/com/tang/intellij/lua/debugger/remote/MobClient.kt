@@ -62,6 +62,8 @@ class MobClient(private val socketChannel: SocketChannel, private val listener: 
                     if (currentCommandWaitForResp == null) {
                         command = commands.poll()
                         command.debugProcess = listener.process
+                        com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                            .info("mobdebug >> ${command.describe()}")
                         command.write(this)
                         streamWriter!!.write("\n")
                         streamWriter!!.flush()
@@ -86,19 +88,34 @@ class MobClient(private val socketChannel: SocketChannel, private val listener: 
             val bf = ByteBuffer.allocate(receiveBufferSize)
             while (!isStopped) {
                 readSize = socketChannel.read(bf)
+                if (readSize < 0) {
+                    // EOF: the Lua process is gone. Without this the loop spins
+                    // on read()==-1 forever and the server never learns that
+                    // the connection is over — so it does not accept the next
+                    // suite's one and the whole debug run hangs.
+                    break
+                }
                 if (readSize > 0) {
+                    // One read may carry several replies ("200 OK" of a command
+                    // right before "202 Paused" of a stop): every line must be
+                    // dispatched on its own, or the pause gets lost together
+                    // with the tail of the buffer.
+                    val text = String(bf.array(), 0, readSize, Charsets.UTF_8)
                     var begin = 0
-                    for (i in 1..readSize + 1) {
-                        if (bf[i - 1].toInt() == '\n'.code) {
-                            onResp(String(bf.array(), begin, i))
-                            begin = i
+                    for (i in text.indices) {
+                        if (text[i] == '\n') {
+                            onResp(text.substring(begin, i + 1))
+                            begin = i + 1
                         }
                     }
-                    if (begin < readSize) {
-                        onResp(String(bf.array(), begin, readSize))
+                    if (begin < text.length) {
+                        onResp(text.substring(begin))
                     }
                     bf.clear()
                 }
+            }
+            if (!isStopped) {
+                onSocketClosed()
             }
         } catch (e: IOException) {
             onSocketClosed()
@@ -108,6 +125,8 @@ class MobClient(private val socketChannel: SocketChannel, private val listener: 
     }
 
     private fun onResp(data: String) {
+        com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+            .info("mobdebug << " + data.trimEnd('\n'))
         val cmd = currentCommandWaitForResp
         if (cmd != null) {
             val eat = cmd.handle(data)
@@ -160,11 +179,13 @@ class MobClient(private val socketChannel: SocketChannel, private val listener: 
     }
 
     fun sendAddBreakpoint(file: String, line: Int) {
-        addCommand("SETB $file $line")
+        // No reply is awaited: the "200 OK" of a breakpoint would hold the
+        // queue, and a lost reply must not delay RUN behind it.
+        addCommand("SETB $file $line", 0)
     }
 
     fun sendRemoveBreakpoint(file: String, line: Int) {
-        addCommand("DELB $file $line")
+        addCommand("DELB $file $line", 0)
     }
 
     fun addCommand(command: String, rl: Int = 1) {

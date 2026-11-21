@@ -2,7 +2,7 @@
 -- MobDebug -- Lua remote debugger
 -- Copyright 2011-20 Paul Kulchenko
 -- Based on RemDebug 1.0 Copyright Kepler Project 2005
--- copy of https://github.com/neopaf/MobDebug/tree/0.803paf2
+-- copy of https://github.com/neopaf/MobDebug/tree/0.803paf3
 --
 
 -- use loaded modules or load explicitly on those systems that require that
@@ -20,7 +20,7 @@ end)("os")
 
 local mobdebug = {
   _NAME = "mobdebug",
-  _VERSION = "0.803paf2",
+  _VERSION = "0.803paf3",
   _COPYRIGHT = "Paul Kulchenko",
   _DESCRIPTION = "Mobile Remote Debugger for the Lua programming language",
   port = os and os.getenv and tonumber((os.getenv("MOBDEBUG_PORT"))) or 8172,
@@ -357,6 +357,9 @@ local function set_breakpoint(file, line)
   if file == '-' and lastfile then file = lastfile
   elseif iscasepreserving then file = string.lower(file) end
   if not breakpoints[line] then breakpoints[line] = {} end
+  -- store both the full path (the exact key) and the base name (the legacy
+  -- key, for controllers that only know a short file name)
+  breakpoints[line][file] = true
   breakpoints[line][get_file_name(file)] = true
 end
 
@@ -364,12 +367,28 @@ local function remove_breakpoint(file, line)
   if file == '-' and lastfile then file = lastfile
   elseif file == '*' and line == 0 then breakpoints = {}
   elseif iscasepreserving then file = string.lower(file) end
-  if breakpoints[line] then breakpoints[line][get_file_name(file)] = nil end
+  if breakpoints[line] then
+    breakpoints[line][file] = nil
+    breakpoints[line][get_file_name(file)] = nil
+  end
+end
+
+-- True for a path that starts from the root ("/x", "C:\x", "\\x").
+local function isfullpath(path)
+  return path:find('^[/\\]') or path:find('^%a[:/\\]')
 end
 
 local function has_breakpoint(file, line)
-  return breakpoints[line]
-     and breakpoints[line][get_file_name(iscasepreserving and string.lower(file) or file)]
+  local byline = breakpoints[line]
+  if not byline then return nil end
+  if byline[file] then return true end
+  -- a breakpoint registered by its full path must not fire in a file that
+  -- merely shares the base name (several suites have "hda_received.lua");
+  -- fall back to the base name only while no full path is registered
+  for key in pairs(byline) do
+    if isfullpath(key) then return nil end
+  end
+  return byline[get_file_name(iscasepreserving and string.lower(file) or file)]
 end
 
 local function restore_vars(vars)

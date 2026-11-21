@@ -1,0 +1,21 @@
+# AGENTS.md
+
+## Language
+
+Everything in this repository is done in **English**:
+
+- code, comments, and doc comments — English;
+- commit messages — English;
+- documentation (`README.md`, `LUAUNIT.md`, and any new docs) — English;
+- pull request titles and descriptions — English.
+
+## Project notes
+
+- This is a fork of [EmmyLua/IntelliJ-EmmyLua](https://github.com/EmmyLua/IntelliJ-EmmyLua);
+  upstream is merged in periodically, local commits sit on top.
+- The LuaUnit integration (JUnit-style test runner) is documented in
+  [LUAUNIT.md](LUAUNIT.md); its sources live under
+  `src/main/java/com/tang/intellij/lua/debugger/luaunit/` and
+  `src/main/resources/luaunit/`.
+- Building for IntelliJ IDEA 2025.3 (the target of this fork's consumers):
+  `./gradlew buildPlugin -DIDEA_VER=2025.3 -x bunch -x buildSearchableOptions --offline`.
