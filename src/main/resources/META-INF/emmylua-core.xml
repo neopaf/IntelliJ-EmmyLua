@@ -336,6 +336,13 @@
     </applicationListeners>
 
     <actions>
+        <!-- The context menu of the tests tree: Copy Test Name works even
+             after a double-click moved the focus to the editor. -->
+        <action id="LuaUnit.CopyTestName"
+                class="com.tang.intellij.lua.debugger.luaunit.LuaUnitCopyTestNameAction"
+                text="Copy Test Name">
+            <add-to-group group-id="TestTreePopupMenu" anchor="first"/>
+        </action>
         <group id="LuaCallHierarchyPopupMenu">
             <reference ref="EditSource"/>
         </group>

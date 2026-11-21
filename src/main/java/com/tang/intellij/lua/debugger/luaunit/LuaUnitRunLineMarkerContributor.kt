@@ -99,12 +99,21 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             return info("Run $name", element)
         }
 
-        // The data entry of a generated case: the marker is on its literal.
+        // The data entry of a generated case: the marker is on its literal —
+        // but only on the `id` line of a row the discovery really turns into
+        // a case. An `id` inside a nested table (a pipe dictionary, a
+        // counter list) is plain data: no marker there.
         val literal = PsiTreeUtil.getParentOfType(element, LuaLiteralExpr::class.java, false)
         if (literal != null && isDataEntry(literal) &&
             element.textRange.startOffset == literal.textRange.startOffset
         ) {
-            return info("Run this case", element)
+            val root = LuaUnitProjectRoot.of(manifest)
+            val line = file.text.substring(0, literal.textRange.startOffset).count { it == '\n' } + 1
+            val isCaseLine = root != null && LuaUnitTextDiscovery.casesCached(manifest, diskPath, root)
+                .any { it.idLine == line }
+            if (isCaseLine) {
+                return info("Run this case", element)
+            }
         }
         return null
     }
@@ -171,6 +180,11 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
     private fun runAction(element: PsiElement, debug: Boolean): AnAction {
         val text = if (debug) "Debug" else "Run"
         return object : AnAction(text, text, AllIcons.Actions.Execute) {
+            init {
+                // Without mnemonic parsing, to keep the "_" of test names.
+                templatePresentation.setText(text, false)
+            }
+
             override fun actionPerformed(event: AnActionEvent) {
                 val project = event.project ?: return
                 execute(project, element, debug)
@@ -201,26 +215,93 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         val root = LuaUnitProjectRoot.of(manifest) ?: return null
         val generators = LuaUnitDataSources.find(manifest, dataFile, root)
         if (generators.isEmpty()) return null
-        val tooltip = "Run " + generators.joinToString(", ") { it.suite + "." + it.prefix + id }
-        val actions = arrayOf(
-            dataAction(element, generators, id, false),
-            dataAction(element, generators, id, true)
-        )
-        return Info(AllIcons.RunConfigurations.TestState.Run, actions, Function { tooltip })
+        // The row declares a case of every generator that requires the
+        // module; two generators of one data module name their cases alike
+        // (test_ss7_data feeds test_decode_ss7 and test_encode_ss7 the same
+        // "TestSuite.test_<id>"), so the generator's file tells them apart.
+        fun caseName(generator: LuaUnitDataSources.Generator): String =
+            if (generator.suite == "_G") generator.prefix + id
+            else generator.suite + "." + generator.prefix + id
+        val tooltip = "Run " + generators.joinToString("; ") { generator ->
+            caseName(generator) + " (" + generator.file.fileName + ")"
+        }
+        // One Run/Debug pair per generator, labelled by the generator's file
+        // (its leading "test_" says nothing here) and separated by a rule,
+        // the way the platform separates unrelated actions.
+        val actions = ArrayList<AnAction>()
+        for ((index, generator) in generators.withIndex()) {
+            if (index > 0) {
+                actions.add(com.intellij.openapi.actionSystem.Separator.create())
+            }
+            // The label keeps the file's "_" — the action text is stored
+            // without mnemonic parsing below, so it is not eaten.
+            val pair = if (generators.size == 1) null
+                else generator.file.fileName.toString().removeSuffix(".lua").removePrefix("test_")
+            actions.add(dataAction(element, generator, id, pair, false))
+            actions.add(dataAction(element, generator, id, pair, true))
+            actions.add(modifyAction(element, generator, id, pair))
+        }
+        return Info(AllIcons.RunConfigurations.TestState.Run, actions.toTypedArray(), Function { tooltip })
+    }
+
+    /** Opens the settings of the configuration the gutter would run. */
+    private fun modifyAction(
+        element: PsiElement,
+        generator: LuaUnitDataSources.Generator,
+        id: String,
+        label: String?
+    ): AnAction {
+        val text = if (label == null) "Modify Run Configuration..."
+        else "Modify Run Configuration ($label)..."
+        return object : AnAction(text, text, AllIcons.General.GearPlain) {
+            init {
+                templatePresentation.setText(text, false)
+            }
+
+            override fun actionPerformed(event: AnActionEvent) {
+                val project = event.project ?: return
+                val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
+                val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
+                    ?: return
+                template.configureDataCase(generator.file, generator.suite, generator.prefix, id)
+                val settings = reuseOrCreate(project, template) ?: return
+                // A temporary configuration must be known to the manager
+                // before it can be selected; the settings dialog then opens
+                // with THIS configuration already chosen.
+                val runManager = RunManager.getInstance(project)
+                if (settings !in runManager.allSettings) {
+                    runManager.addConfiguration(settings)
+                }
+                runManager.selectedConfiguration = settings
+                com.intellij.execution.actions.EditRunConfigurationsAction().actionPerformed(event)
+            }
+        }
     }
 
     private fun dataAction(
         element: PsiElement,
-        generators: List<LuaUnitDataSources.Generator>,
+        generator: LuaUnitDataSources.Generator,
         id: String,
+        label: String?,
         debug: Boolean
     ): AnAction {
-        val text = if (debug) "Debug" else "Run"
+        val text = when {
+            debug && label != null -> "Debug $label"
+            debug -> "Debug"
+            label != null -> "Run $label"
+            else -> "Run"
+        }
         return object : AnAction(text, text, AllIcons.Actions.Execute) {
+            init {
+                // Without mnemonic parsing: the default setText eats every
+                // "_" of the text (a mnemonic marker), and the file names
+                // are full of them ("Run decode_dtcap").
+                templatePresentation.setText(text, false)
+            }
+
             override fun actionPerformed(event: AnActionEvent) {
                 val project = event.project ?: return
                 val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
-                val generator = generators.first()
                 val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
                     ?: return
                 template.configureDataCase(generator.file, generator.suite, generator.prefix, id)

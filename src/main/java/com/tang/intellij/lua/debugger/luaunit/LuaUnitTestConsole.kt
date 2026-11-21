@@ -106,6 +106,11 @@ class LuaUnitTestConsole(
       * replayed on the nodes once the tree is built. */
     private val pendingStates = LinkedHashMap<String, Pair<Boolean, LuaUnitProtocol.Failure?>>()
 
+    /** Suites that finished before their node existed (script-style files are
+      * that quick): the finish is replayed when the tree is built, or the
+      * file node keeps its "not run" dot forever. */
+    private val pendingSuiteFinishes = ArrayList<LuaUnitSuite>()
+
     lateinit var consoleView: SMTRunnerConsoleView
         private set
 
@@ -130,6 +135,10 @@ class LuaUnitTestConsole(
 
     /** The group nodes (sections, suite files) with their plain label, for the counters. */
     private val groupLabels = LinkedHashMap<SMTestProxy, String>()
+
+    /** A suite (file) node -> the file's path from the project root, what
+      * Cmd+C on the node puts on the clipboard (no ":1" line suffix). */
+    private val suiteNodePaths = LinkedHashMap<SMTestProxy, String>()
 
     /**
      * The "(3 passed, 1 failed, 2 ignored, 15 running)" of a group. A category
@@ -239,50 +248,62 @@ class LuaUnitTestConsole(
             com.intellij.execution.testframework.TestConsoleProperties.HIDE_IGNORED_TEST
         ) { updateGroupCounts() }
         // Cmd+C in the tests tree copies the node's shown name — the Java
-        // way. The tree of the results viewer is found among the view's
-        // components (it is created by the form's constructor, before
-        // anything is shown); the proxy of a path comes from the tree's own
+        // way. The view may hold MORE THAN ONE tests tree (a debug tab keeps
+        // its own), and the handler must sit on each of them: installed on
+        // the first one only, the click in the other served a drag location
+        // or nothing at all. The proxy of a path comes from the tree's own
         // API — a tree node is NOT the proxy itself.
-        (findTestTree(consoleView.component) as? com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView)
-            ?.let { tree ->
-                tree.transferHandler = object : javax.swing.TransferHandler() {
-                    override fun createTransferable(component: javax.swing.JComponent): java.awt.datatransfer.Transferable? {
-                        val paths = tree.selectionPaths ?: return null
-                        val names = paths.mapNotNull { path -> tree.getSelectedTest(path)?.let(::copyableName) }
-                        if (names.isEmpty()) {
-                            return null
-                        }
-                        return java.awt.datatransfer.StringSelection(names.joinToString("\n"))
+        val trees = ArrayList<com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView>()
+        findTestTrees(consoleView.component, trees)
+        com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+            .info("copy handler installed on ${trees.size} test tree(s)")
+        for (tree in trees) {
+            tree.transferHandler = object : javax.swing.TransferHandler() {
+                override fun createTransferable(component: javax.swing.JComponent): java.awt.datatransfer.Transferable? {
+                    val paths = tree.selectionPaths ?: return null
+                    val names = paths.mapNotNull { path -> tree.getSelectedTest(path)?.let(::copyableName) }
+                        .filter { it.isNotEmpty() }
+                    com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                        .info("copy: paths=${paths.size} names=${names.size} text='${names.joinToString("\\n").takeLast(120)}'")
+                    if (names.isEmpty()) {
+                        return null
                     }
-
-                    override fun getSourceActions(component: javax.swing.JComponent): Int = COPY
+                    return java.awt.datatransfer.StringSelection(names.joinToString("\n"))
                 }
+
+                override fun getSourceActions(component: javax.swing.JComponent): Int = COPY
             }
+        }
         return consoleView
     }
 
     /**
-     * What Cmd+C copies: the node's shown text. A group's name carries the
-     * live "(N passed, ...)" counter — it is dropped; a case keeps everything
-     * it shows (its description included), with no "test_" prefix — the
-     * shown name is already without one.
+     * What Cmd+C copies: a suite (file) node copies the file's path from the
+     * project root, as a failure message names it and with no line suffix;
+     * a case keeps everything it shows (its description included), with no
+     * "test_" prefix — the shown name is already without one; a group's name
+     * carries the live "(N passed, ...)" counter — it is dropped.
      */
     private fun copyableName(proxy: SMTestProxy): String {
+        suiteNodePaths[proxy]?.let { return it }
         val shown = proxy.presentableName ?: proxy.name ?: return ""
         return if (proxy.isLeaf) shown else shown.replace(Regex("""\s+\([^)]*\)$"""), "")
     }
 
-    /** The tree of the tests view, somewhere among its components. */
-    private fun findTestTree(component: java.awt.Component?): javax.swing.JTree? {
-        if (component is javax.swing.JTree) {
-            return component
+    /** Every tests tree of the view, anywhere among its components. */
+    private fun findTestTrees(
+        component: java.awt.Component?,
+        found: MutableList<com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView>
+    ) {
+        if (component is com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView) {
+            found.add(component)
+            return
         }
         if (component is java.awt.Container) {
             for (child in component.components) {
-                findTestTree(child)?.let { return it }
+                findTestTrees(child, found)
             }
         }
-        return null
     }
 
     /**
@@ -572,30 +593,25 @@ class LuaUnitTestConsole(
             // icon on a fully green group.
             val sectionChildren = ArrayList<SMTestProxy>()
             for (suite in group.suites) {
-                // The location URL is what a double-click on the node feeds to
-                // LuaUnitTestLocator: the file itself for a suite, the case's
-                // declaration line for a case.
-                val suiteNode = SMTestProxy(
-                    suite.displayName, true,
-                    "file:///" + suite.file.toAbsolutePath().normalize().toString().trimStart('/') + ":1"
-                )
+                // No location URL on the file node: a double-click on it
+                // toggles the node, the way the user expects it to.
+                val suiteNode = SMTestProxy(suite.displayName, true, null)
                 suiteNode.setLocator(LuaUnitTestLocator())
                 // The node shows the file's own name with its counter: the
                 // section already says which directory it lives in.
                 com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
                     .info("tree suite=${suite.key.takeLast(45)} cases=${suite.cases.size}")
                 groupLabels[suiteNode] = suite.file.fileName.toString()
+                // Cmd+C on the node copies the file's path from the project
+                // root (the display name already is one), never a drag URL
+                // with a ":1" line suffix.
+                suiteNodePaths[suiteNode] = suite.displayName
                 suiteById(suite.displayName)?.proxy = suiteNode
                 for (case in suite.cases) {
                     val source = case.source
                     val locationUrl = when {
-                        source != null -> {
-                            val file = source.file.toString()
-                            val absolute = if (java.io.File(file).isAbsolute) file
-                            else configuration.project.basePath?.let { "$it/$file" } ?: file
-                            "file:///" + absolute.trimStart('/') + ":${source.line}"
-                        }
-                        else -> "file:///" + suite.file.toAbsolutePath().normalize().toString().trimStart('/') + ":1"
+                        source != null -> "file:///" + absolutePathOf(source.file).trimStart('/') + ":${source.line}"
+                        else -> null
                     }
                     // The proxy is named by the full test name: the SM runner
                     // matches the CASE events by that name; the short name is
@@ -658,10 +674,32 @@ class LuaUnitTestConsole(
             }
         }
         pendingStates.clear()
+        // Replay the suites that finished before the tree existed: without
+        // it their file nodes keep the "not run" dot while their cases are
+        // green (the script-style files finish before the root is reported).
+        if (pendingSuiteFinishes.isNotEmpty()) {
+            val replay = ArrayList(pendingSuiteFinishes)
+            pendingSuiteFinishes.clear()
+            for (suite in replay) {
+                onSuiteFinished(suite)
+            }
+        }
         flushPending()
         // The names of the groups (with their counters) are set once every
         // child is in place; deferred to the EDT like every other tree edit.
         updateGroupCounts()
+    }
+
+    /** A suite's or case's file as an absolute path: relative files (the
+      * manifest's entries, a discovery source) resolve from the project root,
+      * the only base they are relative to. */
+    private fun absolutePathOf(file: java.nio.file.Path): String {
+        val text = file.toString()
+        if (java.io.File(text).isAbsolute || file.isAbsolute) {
+            return text
+        }
+        val base = configuration.project.basePath ?: return text
+        return "$base/$text"
     }
 
     private fun suiteById(name: String): LuaUnitSuite? = suites.firstOrNull { it.key == name }
@@ -824,7 +862,21 @@ class LuaUnitTestConsole(
     var onAllSuitesFinished: (() -> Unit)? = null
 
     fun onSuiteFinished(suite: LuaUnitSuite) = synchronized(lock) {
-        suite.proxy?.setFinished()
+        val proxy = suite.proxy
+        if (proxy == null) {
+            // The suite's process ended before the platform reported the
+            // console root: there is no node to finish yet. The tree build
+            // replays the finish on the node it creates.
+            pendingSuiteFinishes.add(suite)
+            return
+        }
+        proxy.setFinished()
+        // Telemetry for the "dot on a green file node" hunt: what the node
+        // answers right after its finish.
+        com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit").info(
+            "suite finish state: file=${suite.key.takeLast(45)} leaf=${proxy.isLeaf} " +
+                "empty=${proxy.isEmptySuite} defect=${proxy.isDefect} ignored=${proxy.isIgnored}"
+        )
         finishedSuites++
         if (finishedSuites >= suites.size) {
             // Every suite is done: the counters must not claim running cases
