@@ -69,7 +69,7 @@ class LuaUnitProgramRunner : LuaRunner() {
                 // termination ended the run for the platform — a "terminated"
                 // paint over the not-yet-started suites and a premature
                 // summary — while the chain had not even started them.
-                val group = LuaUnitProcessGroupHandler(prepared.suites.size)
+                val group = LuaUnitProcessGroupHandler(prepared.suites.size) { prepared.console.onStopped() }
                 prepared.view.attachToProcess(group)
                 group.startNotify()
                 // The stop button of the debug session stops the Lua processes

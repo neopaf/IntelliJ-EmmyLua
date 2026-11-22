@@ -26,6 +26,14 @@ object LuaUnitDataSources {
     /** One generator: the file name and the class and prefix it builds. */
     data class Generator(val file: Path, val suite: String, val prefix: String)
 
+    /**
+     * The generators of every data module of the manifest, cached by the
+     * joined change stamps of the manifest and all its files: one scan serves
+     * the whole gutter pass, and any edit (saved or not) drops the cache.
+     */
+    private val scanCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Map<String, List<Generator>>>>()
+
     /** ".lua" stripped, as `require` names it. */
     private fun requireName(file: Path): String = file.toString().removeSuffix(".lua").replace('\\', '/')
 
@@ -37,24 +45,39 @@ object LuaUnitDataSources {
         } catch (e: Exception) {
             return emptyList()
         }
-        val generators = ArrayList<Generator>()
+        // A data row asks for its generators on every line marker pass, and
+        // the answer lives in ALL the files of the manifest: without this
+        // cache every `id = "..."` line re-read every one of them.
+        var stampKey = LuaUnitTexts.stamp(manifest)
         for (file in files) {
-            if (file.toAbsolutePath().normalize() == dataFile.toAbsolutePath().normalize()) {
-                continue
-            }
-            val text = try {
-                Files.readString(file)
-            } catch (e: Exception) {
-                continue
-            }
-            if (!text.contains("require('$dataName')") && !text.contains("require(\"$dataName\")")) {
-                continue
-            }
-            val loop = Regex("""([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*['"]([^'"]*)['"]\s*\.\.\s*[A-Za-z_][A-Za-z0-9_]*\.id\s*]""")
-                .find(text) ?: continue
-            generators.add(Generator(file, loop.groupValues[1], loop.groupValues[2]))
+            stampKey = stampKey * 31L + LuaUnitTexts.stamp(file)
         }
-        return generators
+        val key = manifest.toAbsolutePath().normalize().toString()
+        val hit = scanCache[key]
+        val scan: Map<String, List<Generator>>
+        if (hit != null && hit.first == stampKey) {
+            scan = hit.second
+        } else {
+            scan = scanGenerators(files)
+            scanCache[key] = stampKey to scan
+        }
+        return scan[dataName] ?: emptyList()
+    }
+
+    /** The `require`d data module of every file of the manifest, with its loop. */
+    private fun scanGenerators(files: List<Path>): Map<String, List<Generator>> {
+        val result = HashMap<String, MutableList<Generator>>()
+        val loop = Regex("""([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*['"]([^'"]*)['"]\s*\.\.\s*[A-Za-z_][A-Za-z0-9_]*\.id\s*]""")
+        val require = Regex("""require\s*\(\s*['"]([^'"]+)['"]\s*\)""")
+        for (file in files) {
+            val text = LuaUnitTexts.read(file) ?: continue
+            val found = loop.find(text) ?: continue
+            for (match in require.findAll(text)) {
+                result.getOrPut(match.groupValues[1]) { ArrayList() }
+                    .add(Generator(file, found.groupValues[1], found.groupValues[2]))
+            }
+        }
+        return result
     }
 
     /**
@@ -63,11 +86,8 @@ object LuaUnitDataSources {
      * otherwise the [id] itself. The literal's [offsetInFile] locates the row.
      */
     fun rowName(dataFile: java.nio.file.Path, id: String, offsetInFile: Int): String? {
-        val text = try {
-            Files.readString(dataFile)
-        } catch (e: Exception) {
-            return id
-        }
+        // The editor's copy: the row a marker sits on may not be saved yet.
+        val text = LuaUnitTexts.read(dataFile) ?: return id
         // Walk back to the row's opening brace, then forward over the row's own
         // span (a nested table ends the first field scan) for a `desc = '...'`.
         var index = offsetInFile.coerceIn(0, text.length)

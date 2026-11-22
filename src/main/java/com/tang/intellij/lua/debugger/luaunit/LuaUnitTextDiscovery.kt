@@ -37,11 +37,9 @@ object LuaUnitTextDiscovery {
 
     /** Same as [cases], served from the cache when the file has not changed. */
     fun casesCached(manifest: Path, file: Path, root: Path): List<Case> {
-        val stamp = try {
-            Files.getLastModifiedTime(file).toMillis()
-        } catch (e: Exception) {
-            return emptyList()
-        }
+        // The stamp follows the editor's copy (unsaved edits included): a
+        // disk mtime would leave the markers behind until the file is saved.
+        val stamp = LuaUnitTexts.stamp(file)
         val key = "$manifest\u0000$file"
         val hit = cache[key]
         if (hit != null && hit.first == stamp) {
@@ -119,11 +117,8 @@ object LuaUnitTextDiscovery {
 
     /** Every case of [file]: its own declarations and the ones its loop builds. */
     fun cases(manifest: Path, file: Path, root: Path): List<Case> {
-        val text = try {
-            Files.readString(file)
-        } catch (e: Exception) {
-            return emptyList()
-        }
+        // The editor's copy, not the disk: the markers must see unsaved edits.
+        val text = LuaUnitTexts.read(file) ?: return emptyList()
         val lines = text.split('\n')
         val starts = lineStarts(text)
         val blocks = blockComments(text)

@@ -336,6 +336,35 @@ class LuaUnitTestConsole(
             it.setModelProvider { consoleView.resultsViewer }
         }
 
+    /**
+     * The run was stopped: the suite processes are destroyed, no case result
+     * will ever arrive, and the tree would keep its nodes spinning and the
+     * root at "Running tests..." forever (the Stop button is already grey
+     * by then). Close everything that is still open.
+     */
+    fun onStopped() {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            if (root == null) {
+                return@invokeLater
+            }
+            // A case that has not reported its end never will: mark it not
+            // run, the way the end of the whole run does.
+            for (proxy in caseProxies.values) {
+                if (!proxy.isDefect && !proxy.isIgnored && !finishedCases.contains(proxy)) {
+                    proxy.setTestIgnored("not run", "")
+                }
+            }
+            // Close the files and the sections: an open group node is
+            // painted as failed by the platform. setFinished on an already
+            // finished node is what the normal end of a suite does too.
+            for (node in groupLabels.keys) {
+                node.setFinished()
+            }
+            root?.setFinished()
+            writeStatusLine(final = true)
+        }
+    }
+
     /** The summary wording and the color on the status line, on the EDT. */
     private fun showStatusLine() {
         // One write right away: the platform's final repaints of the line
@@ -348,6 +377,11 @@ class LuaUnitTestConsole(
         // schedules (the tab's "Terminated" pass among them), our wording is
         // back within a blink, not after a dark second.
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            // The tab may be closed before the rewrite runs: an Alarm on a
+            // disposed console is an error the platform logs as SEVERE.
+            if (com.intellij.openapi.util.Disposer.isDisposed(consoleView)) {
+                return@invokeLater
+            }
             com.intellij.util.Alarm(com.intellij.util.Alarm.ThreadToUse.SWING_THREAD, consoleView)
                 .addRequest({ writeStatusLine(final = true) }, 150)
             com.intellij.util.Alarm(com.intellij.util.Alarm.ThreadToUse.SWING_THREAD, consoleView)

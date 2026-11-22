@@ -67,9 +67,27 @@ Rules the discovery follows:
 - the tree node of a generated case points at the row's `id = "..."` line, so
   a double-click opens the data, not the loop.
 
-## Skipping a case
+## Ignoring a case
 
-A case can opt out at run time:
+Comment the case out — it stays in the tree as **ignored** and never runs.
+A data row can be commented line by line:
+
+```lua
+--{
+-- id = 'CCR_HDAS-52', hexData = '0100...',
+--}
+```
+
+A function inside a block comment is ignored the same way:
+
+```lua
+--[[ function TestSuite:test_slow() ... end ]]
+```
+
+A commented-out field inside a live row (`-- desc = '...'`) only disables
+that field: the generator still reads the row.
+
+A case can also opt out at run time:
 
 ```lua
 function TestSuite:test_shard()
@@ -81,12 +99,34 @@ end
 The case is reported as ignored with the given reason; the reason is also
 shown next to the node in the tree.
 
+## Case descriptions
+
+The description of a case — active or ignored alike — is the free `-- ...`
+line above its declaration, above the `{` of its data row, or above the `--[[`
+opener of a block (shared by every case the block hides). A row's trailing
+comment wins over the lines above it:
+
+```lua
+-- HDAS-93: disabled
+{ id = 'CCR_HDAS-52', hexData = '0100...' },     -- from the lines above
+
+{ id = 'SY_STR', desc = 'session termination' }, -- the trailing comment wins
+```
+
+The tree shows the description in parentheses next to the case name. The
+structural lines of a commented-out table (`--{`, `--}`, `--[[`) are code,
+not prose — they never become part of a description.
+
 ## Running
 
-- **Gutter icons** — every case declaration (`function TestSuite:test_x()`)
-  and every data row (`id = "..."`, in both suite files and data modules) gets
-  a run marker with **Run** and **Debug** actions. A data row shared by several
-  generators runs the case of each of them.
+- **Gutter icons** — in `run_tests.lua` the first line runs the whole suite,
+  a section title line (`--SS7`) runs that group, and an entry line runs that
+  single test file. In the suite files, every case declaration
+  (`function TestSuite:test_x()`) and every data row (`id = "..."`, in both
+  suite files and data modules) gets the same marker with **Run** and **Debug**
+  actions. A data row several suites build their cases from is more than one
+  test: the icon's menu asks which one to run — a labelled Run/Debug pair
+  (plus Modify Run Configuration) per generator file.
 - **A run configuration** — type *LuaUnit*. Its settings are the interpreter,
   the working directory (the project root by default), read-only test manifest,
   interpreter arguments and environment variables. Create it from the gutter,

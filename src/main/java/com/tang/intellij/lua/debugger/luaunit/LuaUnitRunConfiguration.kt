@@ -120,6 +120,38 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
         name = full
     }
 
+    /** Points this configuration at one section of the manifest. */
+    fun configureSection(manifest: Path, section: String) {
+        scopePath = manifest.toString()
+        scopeKind = Kind.SECTION
+        scopeName = section
+        casePattern = null
+        workingDir = LuaUnitProjectRoot.of(manifest)?.toString() ?: workingDir
+        name = section
+    }
+
+    /** Points this configuration at one test file of the manifest. */
+    fun configureFile(file: Path) {
+        scopePath = file.toString()
+        scopeKind = Kind.FILE
+        scopeName = null
+        casePattern = null
+        workingDir = LuaUnitProjectRoot.of(file)?.toString() ?: workingDir
+        // The configuration is named the way the tree shows the file: its
+        // path from the project root.
+        val root = LuaUnitProjectRoot.of(file)
+        name = if (root != null) {
+            try {
+                root.toAbsolutePath().normalize()
+                    .relativize(file.toAbsolutePath().normalize()).toString().replace('\\', '/')
+            } catch (e: IllegalArgumentException) {
+                file.fileName.toString()
+            }
+        } else {
+            file.fileName.toString()
+        }
+    }
+
     /** Absolute path of the file or the manifest the entry starts from. */
     val scopeFile: Path?
         get() {

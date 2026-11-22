@@ -65,14 +65,35 @@
         <li>Region folding</li>
         <li>Lua Check Tool</li>
     </ul>
+    LuaUnit test running:
+    <ul>
+        <li>Tests tree: every case a plain <code>lua tests/run_tests.lua</code> run would execute has its node, grouped by manifest section, file and suite — declared cases, programmatically added cases from generator loops (<code>id = "..."</code>/<code>desc = "..."</code> rows, including rows of a shared data module), commented-out cases shown as ignored</li>
+        <li>Run/Debug gutter icons: in the manifest the first line runs everything, a section title line runs its group, an entry line runs that file; in the test files the icons sit on case declarations and data rows. A data row several suites build their cases from is more than one test: the icon asks which one to run — a labelled Run/Debug pair per generator plus a Modify Run Configuration action</li>
+        <li>A failed case shows an expected/actual diff (Cmd/Ctrl+D); the console hyperlinks to declaration lines, and to the data files a case reads (<code>at fixture(path:line)</code> frames, any type, not only .lua)</li>
+        <li>A run is scoped to one case, one file, one manifest section, or the whole manifest; the LuaUnit run configuration holds the interpreter, the working directory, interpreter arguments and environment variables</li>
+        <li>Framework frames (<code>luaunit.lua</code>, the runner, <code>[C]</code>) are stripped from failure traces, and a case's own print output goes to its node in the tree</li>
+        <li>Rerun Failed Tests: the failed cases re-run in one click</li>
+        <li>Debug Failed Tests: the failed cases re-run under the debugger (mobdebug), one suite after another; breakpoints work across same-named suite files</li>
+        <li>Cmd/Ctrl+C (and the context menu) copies the test name, a group name or the file's project-relative path; Copy Reference on a case declaration yields its full LuaUnit name</li>
+        <li>Sections of the manifest:
+<pre>'tests/general.lua',    -- no comment above: no group
+
+--SS7
+'tests/ss7/test_decode_ss7.lua',
+'tests/ss7/test_encode_ss7.lua',</pre></li>
+        <li>A case is ignored by commenting it out: a commented-out data row (<code>-- id = 'x'</code>) or a function inside a block comment stays in the tree as ignored, and <code>luaunit.skip("reason")</code> opts out at run time</li>
+        <li>A case's description — shown next to its name in the tree — is the free <code>-- ...</code> line above the declaration or the data row, or the row's trailing comment; the same rule serves active and ignored cases</li>
+        <li>An "All tests" run configuration is created and selected automatically the first time a project with a LuaUnit manifest is opened — just press Run</li>
+    </ul>
     <p>中国朋友可以加QQ群29850775交流及反馈BUG</p>
     ]]></description>
 
     <change-notes><![CDATA[
     <strong>1.4.26-paf1</strong>
     <ul>
-        <li>[FIX] mobdebug upgraded to https://github.com/neopaf/MobDebug/tree/0.803paf2</li>
         <li>luaunit support</li>
+        <li>[NEW] LuaUnit: the full set of test running features — see the "LuaUnit test running" section of the description</li>
+        <li>[FIX] mobdebug upgraded to https://github.com/neopaf/MobDebug/tree/0.803paf2</li>
     </ul>
     <strong>1.4.16</strong>
     <ul>

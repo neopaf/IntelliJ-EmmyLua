@@ -42,8 +42,127 @@ object LuaTestManifest {
     /** One section of the manifest: its title (empty when untitled) and files. */
     data class Group(val name: String, val files: List<Path>)
 
+    /**
+     * A parsed manifest: its groups, and the lines a gutter icon can sit on.
+     *
+     * <p>The gutter asks for the line data on every leaf of the manifest, so
+     * the parse is cached by the file's modification time.
+     */
+    class Parsed internal constructor(
+        val groups: List<Group>,
+        /** 1-based line of a section title comment -> its name (groups with entries only). */
+        val sectionTitleLines: Map<Int, String>,
+        /** 1-based line of an entry -> the file it lists (first listing only). */
+        val entryLines: Map<Int, Path>
+    )
+
+    private val cache = java.util.concurrent.ConcurrentHashMap<Path, Pair<Long, Parsed>>()
+
     private val ENTRY = Regex("([\"'])([^\"']+\\.lua)\\1")
     private val SECTION = Regex("--+\\s*(.+?)\\s*$")
+
+    /**
+     * Entries of the manifest, grouped by section.
+     *
+     * @throws IllegalArgumentException when the manifest cannot be read
+     */
+    fun groups(manifest: Path): List<Group> = parse(manifest).groups
+
+    /** Entries of the manifest in declaration order, sections flattened. */
+    fun files(manifest: Path): List<Path> = groups(manifest).flatMap { it.files }
+
+    /**
+     * The title [line] carries in [text] (the editor's copy of the manifest),
+     * when it is a section title with entries below.
+     *
+     * <p>The gutter icons must follow unsaved edits at once: the disk state
+     * (behind [parse]) is stale until the file is saved, and its line numbers
+     * no longer match the editor's.
+     */
+    fun sectionTitleAt(text: String, directory: Path, line: Int): String? =
+        parseText(text, directory).sectionTitleLines[line]
+
+    /** The test file [line] lists in [text], when it is an entry line. */
+    fun entryAt(text: String, directory: Path, line: Int): Path? =
+        parseText(text, directory).entryLines[line]
+
+    private fun parse(manifest: Path): Parsed {
+        val stamp = try {
+            Files.getLastModifiedTime(manifest).toMillis()
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Cannot read $manifest: ${e.message}", e)
+        }
+        cache[manifest]?.let { (time, parsed) ->
+            if (time == stamp) {
+                return parsed
+            }
+        }
+        val text = try {
+            Files.readString(manifest)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Cannot read $manifest: ${e.message}", e)
+        }
+        // Entries are project-relative ("tests/ss7/x.lua"), even when the
+        // manifest sits in a subdirectory such as tests/. They resolve against
+        // the project root, not against the manifest's own directory.
+        val directory = LuaUnitProjectRoot.of(manifest) ?: manifest.parent ?: manifest.toAbsolutePath().parent
+        val parsed = parseText(text, directory)
+        cache[manifest] = stamp to parsed
+        return parsed
+    }
+
+    /** Parses the manifest from [text]; [directory] resolves its entries. */
+    private fun parseText(text: String, directory: Path): Parsed {
+        val lines = text.lines()
+        val sections = LinkedHashMap<String, MutableList<Path>>()
+        val seen = HashSet<Path>()
+        val sectionTitleLines = HashMap<Int, String>()
+        val entryLines = HashMap<Int, Path>()
+        // Entries before the first section comment (and around a bare "--"
+        // separator) belong to no section: the tree places them right under
+        // its root, without a group node of their own.
+        var current = ""
+        // No entry seen for `current` yet: the first one binds its title line.
+        var currentIsFresh = true
+        var titleLine: Int? = null
+
+        for ((index, raw) in lines.withIndex()) {
+            val number = index + 1
+            var line = raw
+            val comment = line.indexOf("--")
+            if (comment >= 0 && line.substring(0, comment).isBlank()) {
+                val title = SECTION.find(line.substring(comment))
+                val text = title?.groupValues?.get(1)?.trim()
+                // A bare "--" is a separator, not a title: it must not rename
+                // the section the entries around it belong to.
+                if (!text.isNullOrEmpty()) {
+                    current = text
+                    currentIsFresh = true
+                    titleLine = number
+                }
+                line = line.substring(0, comment)
+            }
+
+            for (entry in ENTRY.findAll(line)) {
+                val path = directory.resolve(entry.groupValues[2]).normalize()
+                if (seen.add(path)) {
+                    sections.getOrPut(current) { ArrayList() }.add(path)
+                    entryLines[number] = path
+                    if (currentIsFresh) {
+                        // The first entry of a group binds its title line:
+                        // that is where the icon runs the whole group from.
+                        titleLine?.let { sectionTitleLines[it] = current }
+                        currentIsFresh = false
+                    }
+                }
+            }
+        }
+
+        return Parsed(
+            sections.map { (name, files) -> Group(name, files) },
+            sectionTitleLines, entryLines
+        )
+    }
 
     /** Manifest file names looked up in the directory of the selected line. */
     val MANIFEST_NAMES = listOf("run_tests.lua")
@@ -71,52 +190,4 @@ object LuaTestManifest {
         }
         return null
     }
-
-    /**
-     * Entries of the manifest, grouped by section.
-     *
-     * @throws IllegalArgumentException when the manifest cannot be read
-     */
-    fun groups(manifest: Path): List<Group> {
-        val lines = try {
-            Files.readAllLines(manifest)
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Cannot read $manifest: ${e.message}", e)
-        }
-        // Entries are project-relative ("tests/ss7/x.lua"), even when the
-        // manifest sits in a subdirectory such as tests/. They resolve against
-        // the project root, not against the manifest's own directory.
-        val directory = LuaUnitProjectRoot.of(manifest) ?: manifest.parent ?: manifest.toAbsolutePath().parent
-
-        val sections = LinkedHashMap<String, MutableList<Path>>()
-        val seen = HashSet<Path>()
-        var current = ""
-
-        for (raw in lines) {
-            var line = raw
-            val comment = line.indexOf("--")
-            if (comment >= 0 && line.substring(0, comment).isBlank()) {
-                val title = SECTION.find(line.substring(comment))
-                val text = title?.groupValues?.get(1)?.trim()
-                // A bare "--" is a separator, not a title: it must not rename
-                // the section the entries around it belong to.
-                if (!text.isNullOrEmpty()) {
-                    current = text
-                }
-                line = line.substring(0, comment)
-            }
-
-            for (entry in ENTRY.findAll(line)) {
-                val path = directory.resolve(entry.groupValues[2]).normalize()
-                if (seen.add(path)) {
-                    sections.getOrPut(current) { ArrayList() }.add(path)
-                }
-            }
-        }
-
-        return sections.map { (name, files) -> Group(name, files) }
-    }
-
-    /** Entries of the manifest in declaration order, sections flattened. */
-    fun files(manifest: Path): List<Path> = groups(manifest).flatMap { it.files }
 }

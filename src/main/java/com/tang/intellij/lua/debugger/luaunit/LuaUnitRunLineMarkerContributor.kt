@@ -69,9 +69,36 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         val manifest = LuaTestManifest.findManifest(diskPath) ?: return null
 
         if (manifest.toString() == path) {
-            // The manifest is the entry point of the whole suite, but one entry
-            // per line would be noise: the icon is on the first line only.
-            return if (isFirstElementOfLine(element)) info("Run all LuaUnit tests", element) else null
+            // The manifest is the entry point of the whole suite. The first
+            // leaf of the file runs everything (ONE marker: the shebang line
+            // alone holds three leaves, and one per line was noise). Further
+            // down, a section title line runs its section, and an entry line
+            // runs that file. Entries without a section comment have no
+            // group — there is nothing above the file to run.
+            if (isFirstLeaf(element)) {
+                return info("Run all LuaUnit tests", element)
+            }
+            if (element is com.intellij.psi.PsiWhiteSpace || !isFirstElementOfLine(element)) {
+                return null
+            }
+            val line = file.text.substring(0, element.textRange.startOffset).count { it == '\n' } + 1
+            // The manifest is parsed from the editor's copy: unsaved edits
+            // must not leave the markers behind until the file is saved.
+            val directory = LuaUnitProjectRoot.of(manifest)
+                ?: manifest.parent ?: manifest.toAbsolutePath().parent
+            val title = LuaTestManifest.sectionTitleAt(file.text, directory, line)
+            if (title != null) {
+                com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                    .info("manifest gutter: line=$line TITLE '$title'")
+                return scopeInfo("Run $title tests") { it.configureSection(manifest, title) }
+            }
+            val entry = LuaTestManifest.entryAt(file.text, directory, line)
+            if (entry != null) {
+                com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                    .info("manifest gutter: line=$line ENTRY $entry")
+                return scopeInfo("Run ${entry.fileName}") { it.configureFile(entry) }
+            }
+            return null
         }
 
         val inManifest = try {
@@ -118,6 +145,10 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         return null
     }
 
+    /** True when [element] is the very first leaf of its file. */
+    private fun isFirstLeaf(element: PsiElement): Boolean =
+        element == com.intellij.psi.util.PsiTreeUtil.getDeepestFirst(element.containingFile)
+
     /** True when [element] is the first non-blank element of its line. */
     private fun isFirstElementOfLine(element: PsiElement): Boolean {
         val text = element.containingFile.text
@@ -134,6 +165,37 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             index++
         }
         return index == offset
+    }
+
+    /** One marker: a Run/Debug pair for the scope [configure] sets up. */
+    private fun scopeInfo(tooltip: String, configure: (LuaUnitRunConfiguration) -> Unit): Info =
+        Info(
+            AllIcons.RunConfigurations.TestState.Run,
+            arrayOf(
+                scopeAction("Run", false, configure),
+                scopeAction("Debug", true, configure)
+            ),
+            Function { tooltip }
+        )
+
+    /** Runs (or debugs) the scope a fresh configuration [configure] points at. */
+    private fun scopeAction(text: String, debug: Boolean, configure: (LuaUnitRunConfiguration) -> Unit): AnAction {
+        return object : AnAction(text, text, AllIcons.Actions.Execute) {
+            init {
+                // Without mnemonic parsing, to keep the "_" of test names.
+                templatePresentation.setText(text, false)
+            }
+
+            override fun actionPerformed(event: AnActionEvent) {
+                val project = event.project ?: return
+                val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
+                val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
+                    ?: return
+                configure(template)
+                val settings = reuseOrCreate(project, template) ?: return
+                ProgramRunnerUtil.executeConfiguration(settings, executor(debug))
+            }
+        }
     }
 
     private fun funcName(func: PsiElement): String? = when (func) {

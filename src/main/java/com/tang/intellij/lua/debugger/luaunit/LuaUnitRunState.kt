@@ -52,7 +52,7 @@ class LuaUnitRunState(
         // The tab of the run must live as long as any of its suite processes:
         // the first one finishing early used to mark the whole run
         // terminated, and the still-arriving events painted stray crosses.
-        val group = LuaUnitProcessGroupHandler(handlers.size)
+        val group = LuaUnitProcessGroupHandler(handlers.size) { prepared.console.onStopped() }
         handlers.forEach { group.track(it) }
         // The console follows the whole group, not the first suite's
         // process: attached to the first one, its early (and normal — a
@@ -176,7 +176,11 @@ class LuaUnitExecutionResult(
  * the console before the first of them exists. [expected] says how many
  * handlers will eventually be tracked.
  */
-class LuaUnitProcessGroupHandler(private val expected: Int) : ProcessHandler() {
+class LuaUnitProcessGroupHandler(
+    private val expected: Int,
+    /** Runs when the group is stopped: the tests tree has to close its still-spinning nodes. */
+    private val onStopped: (() -> Unit)? = null
+) : ProcessHandler() {
 
     private val tracked = java.util.concurrent.CopyOnWriteArrayList<ProcessHandler>()
     private val alive = java.util.concurrent.atomic.AtomicInteger(expected)
@@ -232,6 +236,9 @@ class LuaUnitProcessGroupHandler(private val expected: Int) : ProcessHandler() {
     override fun destroyProcessImpl() {
         isStopping = true
         tracked.forEach { it.destroyProcess() }
+        // The Stop button kills the processes, but no case result arrives
+        // anymore: without this callback the tree keeps spinning forever.
+        onStopped?.invoke()
     }
 
     override fun detachProcessImpl() {
