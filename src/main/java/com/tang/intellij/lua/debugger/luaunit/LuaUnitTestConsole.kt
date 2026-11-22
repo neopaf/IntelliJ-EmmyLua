@@ -928,17 +928,11 @@ class LuaUnitTestConsole(
                 proxy.duration?.let { millis += it }
             }
             // The summary line, in one wording everywhere it is shown: the
-            // status line under the tree, the text under it, and the root's
-            // title. "1 test failed, 520 passed, 5 ignored  521 tests total, 512 ms".
-            // The status line itself is written from onTestingFinished — after
+            // status line under the tree and the root's title. "1 test
+            // failed, 520 passed, 5 ignored  521 tests total, 512 ms". The
+            // status line itself is written from onTestingFinished — after
             // the platform's own final redraw of it.
             val summary = summaryLine(passed, failed, ignoredCount, millis)
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                // The totals as plain console text as well: the status line
-                // is redrawn by the platform and a race can blank it, while
-                // the text under the tree stays put.
-                consoleView.print("$summary\n", ConsoleViewContentType.NORMAL_OUTPUT)
-            }
             root?.setFinished()
             val title = if (summary.isEmpty()) "Lua tests" else "Lua tests — $summary"
             root?.setPresentableName(title)
