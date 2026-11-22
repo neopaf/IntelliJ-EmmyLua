@@ -75,8 +75,16 @@ class LuaUnitTestConsole(
 
     private val lock = Any()
 
-    /** Output that arrived before the node it belongs to existed. */
-    private val pending = HashMap<String, StringBuilder>()
+    /**
+     * The events that arrived before the tree was built. The suite processes
+     * start (and report their first cases) before the platform reports the
+     * console's root proxy, so the tree may not exist yet; the events are
+     * kept here and replayed on the nodes IN THEIR ARRIVAL ORDER. They used
+     * to sit in three buffers replayed states-first, and a case that finished
+     * before the tree was built got its green "PASSED" printed above its own
+     * output — the marker belongs under it.
+     */
+    private val journal = ArrayList<() -> Unit>()
 
     private val caseProxies = ConcurrentHashMap<String, SMTestProxy>()
 
@@ -99,17 +107,6 @@ class LuaUnitTestConsole(
 
     /** When each running case started, to give the node its duration. */
     private val caseStarts = ConcurrentHashMap<String, Long>()
-
-    /** The case events that arrived before the tree existed. The suites start
-      * before the platform reports the console's root, so the first cases may
-      * finish before their nodes are there; the outcome is kept here and
-      * replayed on the nodes once the tree is built. */
-    private val pendingStates = LinkedHashMap<String, Pair<Boolean, LuaUnitProtocol.Failure?>>()
-
-    /** Suites that finished before their node existed (script-style files are
-      * that quick): the finish is replayed when the tree is built, or the
-      * file node keeps its "not run" dot forever. */
-    private val pendingSuiteFinishes = ArrayList<LuaUnitSuite>()
 
     lateinit var consoleView: SMTRunnerConsoleView
         private set
@@ -701,41 +698,16 @@ class LuaUnitTestConsole(
                 sectionChildren.forEach { rootProxy.addChild(it) }
             }
         }
-        // Replay the case events that arrived before the tree was built. The
-        // key is "suite\0case": different suites may run cases of the same
-        // name (TestSuite.test_DWR lives in two files), and a bare-name map
-        // kept only the last of them — the other node never closed and its
-        // group's counter stayed at zero.
-        for ((id, outcome) in pendingStates) {
-            val node = caseProxies[id] ?: run {
-                com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
-                    .info("replay miss: ${id.substringAfter('\u0000')} of ${id.substringBefore('\u0000')}")
-                continue
-            }
-            val (started, failure) = outcome
-            if (started) {
-                node.setStarted()
-            } else {
-                val suite = suiteById(id.substringBefore('\u0000'))
-                if (suite != null) {
-                    applyCaseFinished(node, suite, id.substringAfter('\u0000'), failure, emptyList())
-                } else {
-                    node.setFinished()
-                }
-            }
+        // Replay the events that arrived before the tree was built, in the
+        // order they arrived: a case's output goes under its "PASSED" line
+        // only then. (The states, the suite finishes and the output used to
+        // sit in three buffers replayed states-first, which put the marker
+        // above the output of the very first cases of a run.)
+        val replay = ArrayList(journal)
+        journal.clear()
+        for (event in replay) {
+            event()
         }
-        pendingStates.clear()
-        // Replay the suites that finished before the tree existed: without
-        // it their file nodes keep the "not run" dot while their cases are
-        // green (the script-style files finish before the root is reported).
-        if (pendingSuiteFinishes.isNotEmpty()) {
-            val replay = ArrayList(pendingSuiteFinishes)
-            pendingSuiteFinishes.clear()
-            for (suite in replay) {
-                onSuiteFinished(suite)
-            }
-        }
-        flushPending()
         // The names of the groups (with their counters) are set once every
         // child is in place; deferred to the EDT like every other tree edit.
         updateGroupCounts()
@@ -765,7 +737,21 @@ class LuaUnitTestConsole(
 
     // -------------------------------------------------------------- events
 
+    /** Runs [block] on the built tree, or queues it for the replay in
+      * [buildTree] when the tree does not exist yet. Called under [lock]. */
+    private fun nowOrDefer(block: () -> Unit) {
+        if (root == null) {
+            journal.add(block)
+        } else {
+            block()
+        }
+    }
+
     fun onSuiteStarted(suite: LuaUnitSuite) = synchronized(lock) {
+        nowOrDefer { onSuiteStartedNow(suite) }
+    }
+
+    private fun onSuiteStartedNow(suite: LuaUnitSuite) {
         // The debugger runs the suites one after another, and a Lua process
         // under the mobdebug hook is slow: say which one is starting and
         // where in the queue it is, so the long quiet stretches between two
@@ -780,6 +766,10 @@ class LuaUnitTestConsole(
 
     /** luaunit.skip("reason"): the case is ignored, not failed. */
     fun onCaseSkipped(suite: LuaUnitSuite, name: String, reason: String) = synchronized(lock) {
+        nowOrDefer { onCaseSkippedNow(suite, name, reason) }
+    }
+
+    private fun onCaseSkippedNow(suite: LuaUnitSuite, name: String, reason: String) {
         val node = caseProxies[key(suite.key, name)]
         if (node != null) {
             node.setTestIgnored(reason, "")
@@ -791,13 +781,18 @@ class LuaUnitTestConsole(
         }
     }
 
-    fun onCaseStarted(suite: LuaUnitSuite, name: String) = synchronized(lock) {
-        caseStarts[key(suite.key, name)] = System.currentTimeMillis()
-        val node = caseProxies[key(suite.key, name)]
-        if (node == null) {
-            pendingStates[key(suite.key, name)] = Pair(true, null)
-            return
+    fun onCaseStarted(suite: LuaUnitSuite, name: String) {
+        // Captured at the event, not at the replay: a deferred start must not
+        // zero the case's duration.
+        val started = System.currentTimeMillis()
+        synchronized(lock) {
+            nowOrDefer { onCaseStartedAt(suite, name, started) }
         }
+    }
+
+    private fun onCaseStartedAt(suite: LuaUnitSuite, name: String, started: Long) {
+        caseStarts[key(suite.key, name)] = started
+        val node = caseProxies[key(suite.key, name)] ?: return
         node.setStarted()
     }
 
@@ -807,11 +802,21 @@ class LuaUnitTestConsole(
         failure: LuaUnitProtocol.Failure?,
         fixtures: List<String> = emptyList()
     ) = synchronized(lock) {
+        nowOrDefer { onCaseFinishedNow(suite, name, failure, fixtures) }
+    }
+
+    private fun onCaseFinishedNow(
+        suite: LuaUnitSuite,
+        name: String,
+        failure: LuaUnitProtocol.Failure?,
+        fixtures: List<String>
+    ) {
         val node = caseProxies[key(suite.key, name)]
         com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
             .info("onCaseFinished name=$name node=${node != null} failure=${failure != null}")
         if (node == null) {
-            pendingStates[key(suite.key, name)] = Pair(false, failure)
+            // The case is not of this run's tree (it was filtered, say): no
+            // node will ever take it.
             return
         }
         applyCaseFinished(node, suite, name, failure, fixtures)
@@ -888,13 +893,9 @@ class LuaUnitTestConsole(
 
 
     fun onOutput(suite: LuaUnitSuite, caseName: String?, text: String, error: Boolean) {
+        val suiteKey = suite.key
         synchronized(lock) {
-            val node = if (caseName != null) caseProxies[key(suite.key, caseName)] else suite.proxy
-            if (node == null) {
-                pending.getOrPut(suite.key + "\u0000" + (caseName ?: "")) { StringBuilder() }.append(text)
-            } else {
-                printTo(node, text, error)
-            }
+            nowOrDefer { appendOutputNow(suiteKey, caseName, text, error) }
         }
         if (debug) {
             // The Java way: the Console tab of the debug session shows the
@@ -909,16 +910,28 @@ class LuaUnitTestConsole(
         }
     }
 
+    /** The node-taking half of [onOutput]; during the replay the debug
+      * session already printed the text when the event arrived. */
+    private fun appendOutputNow(suiteKey: String, caseName: String?, text: String, error: Boolean) {
+        val node = if (caseName != null) caseProxies[key(suiteKey, caseName)] else suiteById(suiteKey)?.proxy
+        if (node != null) {
+            printTo(node, text, error)
+        }
+    }
+
     /** Called when every suite of the run has finished. */
     var onAllSuitesFinished: (() -> Unit)? = null
 
     fun onSuiteFinished(suite: LuaUnitSuite) = synchronized(lock) {
+        nowOrDefer { onSuiteFinishedNow(suite) }
+    }
+
+    private fun onSuiteFinishedNow(suite: LuaUnitSuite) {
         val proxy = suite.proxy
         if (proxy == null) {
-            // The suite's process ended before the platform reported the
-            // console root: there is no node to finish yet. The tree build
-            // replays the finish on the node it creates.
-            pendingSuiteFinishes.add(suite)
+            // Not of this run's tree: no node will ever take the finish.
+            com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                .info("suite finish without a node: ${suite.key}")
             return
         }
         proxy.setFinished()
@@ -998,23 +1011,6 @@ class LuaUnitTestConsole(
      */
     private fun printTo(node: SMTestProxy, text: String, error: Boolean) {
         node.addOutput(text, if (error) SuiteOutputKeys.STDERR else SuiteOutputKeys.STDOUT)
-    }
-
-    /** Output that preceded the tree (a load-time print, say) goes to the suite. */
-    private fun flushPending() {
-        if (pending.isEmpty()) {
-            return
-        }
-        for ((id, text) in pending) {
-            val suiteName = id.substringBefore('\u0000')
-            val caseName = id.substringAfter('\u0000').ifEmpty { null }
-            val suite = suiteById(suiteName)
-            val node = if (caseName != null) caseProxies[key(suiteName, caseName)] else suite?.proxy
-            if (node != null) {
-                printTo(node, text.toString(), false)
-            }
-        }
-        pending.clear()
     }
 
     /**
