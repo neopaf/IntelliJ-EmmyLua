@@ -157,7 +157,10 @@ object LuaUnitRunnerScript {
         if (workingDir != null) {
             path.append(workingDir).append("/?.lua;")
         }
+        // The port is exported for the runner's timing markers too: they go to
+        // stderr only when the run is a debug one.
         return "package.path = '$path' .. package.path " +
+                "_LUAUNIT_MOBDEBUG_PORT = $port " +
                 "local ok, mob = pcall(require, 'mobdebug') " +
                 "if ok then mob.start('127.0.0.1', $port) else io.stderr:write('[LuaUnit] mobdebug: ' .. tostring(mob) .. '\\n') end"
     }

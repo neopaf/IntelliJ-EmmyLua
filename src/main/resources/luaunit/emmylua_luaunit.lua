@@ -132,12 +132,25 @@ end
 local here = (arg and arg[0] or ''):match('^(.*[/\\])') or './'
 package.path = here .. '?.lua;' .. package.path
 
+-- Timing markers, under Debug only: a run on the mobdebug line hook can be
+-- slow, and these say WHERE the time goes (the wall clock of the process,
+-- from its start). The lines go to stderr, so the console of the run shows
+-- them next to the tree.
+local debugTiming = _LUAUNIT_MOBDEBUG_PORT ~= nil
+local function timing(label)
+    if debugTiming then
+        io.stderr:write(string.format('[LuaUnit] %-24s %7.2fs\n', label, os.clock()))
+    end
+end
+timing('runner start')
+
 local okDiff, diff = pcall(require, 'emmylua_diff')
 if not okDiff then
     diff = { install = function() end, extract = function(text) return text, nil, nil end }
 end
 
 local okLuaUnit, lu = pcall(require, 'luaunit')
+timing('libs loaded')
 if not okLuaUnit then
     emitMark('DONE', '{"name": ' .. quote(testFile or 'lua') .. ', "error": ' .. quote('luaunit is not installed: ' .. tostring(lu))
         .. ', "cases": [], "failed": []}')
@@ -213,7 +226,13 @@ end
 
 -- Files where a case's data entry may live: the test file itself and the
 -- modules it requires (test data is often kept in a *_data.lua module).
+local dataFilesCache = {}
+
 local function dataFilesOf(path)
+    local cached = dataFilesCache[path]
+    if cached ~= nil then
+        return cached
+    end
     local files = { path }
     local text = lines(path)
     if text then
@@ -227,7 +246,40 @@ local function dataFilesOf(path)
             end
         end
     end
+    dataFilesCache[path] = files
     return files
+end
+
+-- Every `id = "..."` / `desc = "..."` value of a data file, with its line:
+-- one pass over the file builds the map the case search reads. The values
+-- often go through a gsub that turns dots into underscores, so a value is
+-- reachable under its normalized name too (SY.SLR as SY_SLR).
+local dataEntryCache = {}
+
+local function dataEntries(path)
+    local cached = dataEntryCache[path]
+    if cached ~= nil then
+        return cached
+    end
+    local index = {}
+    local text = lines(path)
+    if text then
+        for number, line in ipairs(text) do
+            local key = line:match("id%s*=%s*['\"]([^'\"]+)['\"]")
+                or line:match("desc%s*=%s*['\"]([^'\"]+)['\"]")
+            if key ~= nil then
+                if index[key] == nil then
+                    index[key] = number
+                end
+                local normalized = key:gsub('%.', '_')
+                if index[normalized] == nil then
+                    index[normalized] = number
+                end
+            end
+        end
+    end
+    dataEntryCache[path] = index
+    return index
 end
 
 -- Generated cases (built in a loop like TestSuite['test_' .. id]) all share the
@@ -236,40 +288,19 @@ end
 -- the `id = "..."` (or `desc = "..."`) entry of the data instead. Every
 -- left-truncation of the name at '_' is a candidate, longest first.
 local function dataLineOf(name, files)
-    local candidates = {}
     local rest = name
     while true do
-        candidates[#candidates + 1] = rest
+        for _, file in ipairs(files) do
+            local line = dataEntries(file)[rest]
+            if line then
+                return file, line
+            end
+        end
         local shorter = rest:match('^.-_(.*)$')
         if shorter == nil or shorter == '' then
             break
         end
         rest = shorter
-    end
-
-    for _, candidate in ipairs(candidates) do
-        local escaped = escapePattern(candidate)
-        local dotted = escaped:gsub('%%_', '[._]')
-        local patterns = {
-            'id%s*=%s*["\']' .. escaped .. '["\']',
-            'desc%s*=%s*["\']' .. escaped .. '["\']',
-        }
-        if dotted ~= escaped then
-            patterns[#patterns + 1] = 'id%s*=%s*["\']' .. dotted .. '["\']'
-            patterns[#patterns + 1] = 'desc%s*=%s*["\']' .. dotted .. '["\']'
-        end
-        for _, file in ipairs(files) do
-            local text = lines(file)
-            if text then
-                for number, line in ipairs(text) do
-                    for _, pattern in ipairs(patterns) do
-                        if line:find(pattern) then
-                            return file, number
-                        end
-                    end
-                end
-            end
-        end
     end
     return nil
 end
@@ -353,6 +384,7 @@ local function requireHook(name, ...)
 end
 require = requireHook
 
+timing('before file load')
 currentCase = testFile
 local okLoad, loadErr = xpcall(function()
     assert(loadfile(testFile))()
@@ -362,6 +394,7 @@ end, function(err)
     end
     return err
 end)
+timing('after file load')
 require = realRequire
 os.exit = loadExit
 lu.LuaUnit.run = luaUnitRun
@@ -604,6 +637,7 @@ local okRun, runErr = xpcall(function()
     end
 
     runner:startSuite(#selected, 0)
+    timing('before cases')
     runner:setupSuite(instances)
 
     for _, caseName in ipairs(selected) do
