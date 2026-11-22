@@ -19,3 +19,7 @@ Everything in this repository is done in **English**:
   `src/main/resources/luaunit/`.
 - Building for IntelliJ IDEA 2025.3 (the target of this fork's consumers):
   `./gradlew buildPlugin -DIDEA_VER=2025.3 -x bunch -x buildSearchableOptions --offline`.
+- After implementing a change, **always launch the sandbox** so the change can be
+  tried by hand: `./gradlew runIde -DIDEA_VER=2025.3 --offline` (a long-running
+  GUI, start it in the background; the sandbox IDE log is under
+  `build/2025.3/idea-sandbox/IU-2025.3/log/idea.log`).
