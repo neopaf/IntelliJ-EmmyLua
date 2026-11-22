@@ -34,9 +34,9 @@ import com.tang.intellij.lua.psi.*
 abstract class LuaDebuggerEvaluator : XDebuggerEvaluator() {
     override fun getExpressionRangeAtOffset(project: Project, document: Document, offset: Int, sideEffectsAllowed: Boolean): TextRange? {
         var currentRange: TextRange? = null
-        PsiDocumentManager.getInstance(project).commitAndRunReadAction {
+        fun find() {
             try {
-                val file = PsiDocumentManager.getInstance(project).getPsiFile(document) ?: return@commitAndRunReadAction
+                val file = PsiDocumentManager.getInstance(project).getPsiFile(document) ?: return
                 if (currentRange == null) {
                     val ele = file.findElementAt(offset)
                     if (ele != null && ele.node.elementType == LuaTypes.ID) {
@@ -61,6 +61,14 @@ abstract class LuaDebuggerEvaluator : XDebuggerEvaluator() {
                 }
             } catch (ignored: IndexNotReadyException) {
             }
+        }
+        // A value hint on hover asks for the range already inside a read
+        // action: committing there would deadlock (the platform logs it as
+        // SEVERE), and the hint reads a document no one is editing mid-hover.
+        if (com.intellij.openapi.application.ApplicationManager.getApplication().isReadAccessAllowed) {
+            find()
+        } else {
+            PsiDocumentManager.getInstance(project).commitAndRunReadAction { find() }
         }
         return currentRange
     }
