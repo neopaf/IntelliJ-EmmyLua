@@ -177,8 +177,21 @@ project(":") {
         implementation("org.luaj:luaj-jse:3.0.1")
         implementation("com.jgoodies:forms:1.2.1")
         intellijPlatform {
-            intellijIdeaUltimate(buildVersionData.ideaSDKVersion)
+            // download.jetbrains.com is unreachable from this network (HTTP
+            // 451), so a 2026.2 build takes the SDK from a locally installed
+            // IDE: -PlocalIde="/Applications/IntelliJ IDEA.app".
+            val localIde = providers.gradleProperty("localIde")
+            if (localIde.isPresent) {
+                local(rootProject.file(localIde.get()))
+            } else {
+                intellijIdeaUltimate(buildVersionData.ideaSDKVersion)
+            }
             bundledModule("intellij.spellchecker")
+            // 2026.2 moved the SM test framework out of the platform into a
+            // bundled plugin; in 2025.3 the classes are in the platform itself.
+            if (buildVersionData.ideaSDKShortVersion == "2026.2") {
+                bundledPlugin("intellij.testRunner.plugin")
+            }
         }
     }
 
@@ -283,6 +296,28 @@ project(":") {
             dependsOn("installEmmyDebugger")
             sinceBuild.set(buildVersionData.sinceBuild)
             untilBuild.set(buildVersionData.untilBuild)
+        }
+
+        // The SM test framework classes live in a bundled plugin from 2026.2
+        // on (they were part of the platform itself before): the dependency
+        // line is patched into the descriptor for that build only.
+        processResources {
+            val smRunnerDepends = if (buildVersionData.ideaSDKShortVersion == "2026.2") {
+                "<depends>intellij.testRunner.plugin</depends>"
+            } else {
+                ""
+            }
+            // The task must re-run when the patched value changes, not only
+            // when the descriptor file does.
+            inputs.property("smRunnerDepends", smRunnerDepends)
+            doLast {
+                val descriptor = File(destinationDir, "META-INF/plugin.xml")
+                if (descriptor.isFile) {
+                    descriptor.writeText(
+                        descriptor.readText().replace("@SM_RUNNER_DEPENDS@", smRunnerDepends)
+                    )
+                }
+            }
         }
 
         publishPlugin {
