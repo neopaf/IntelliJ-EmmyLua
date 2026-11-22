@@ -132,25 +132,12 @@ end
 local here = (arg and arg[0] or ''):match('^(.*[/\\])') or './'
 package.path = here .. '?.lua;' .. package.path
 
--- Timing markers, under Debug only: a run on the mobdebug line hook can be
--- slow, and these say WHERE the time goes (the wall clock of the process,
--- from its start). The lines go to stderr, so the console of the run shows
--- them next to the tree.
-local debugTiming = _LUAUNIT_MOBDEBUG_PORT ~= nil
-local function timing(label)
-    if debugTiming then
-        io.stderr:write(string.format('[LuaUnit] %-24s %7.2fs\n', label, os.clock()))
-    end
-end
-timing('runner start')
-
 local okDiff, diff = pcall(require, 'emmylua_diff')
 if not okDiff then
     diff = { install = function() end, extract = function(text) return text, nil, nil end }
 end
 
 local okLuaUnit, lu = pcall(require, 'luaunit')
-timing('libs loaded')
 if not okLuaUnit then
     emitMark('DONE', '{"name": ' .. quote(testFile or 'lua') .. ', "error": ' .. quote('luaunit is not installed: ' .. tostring(lu))
         .. ', "cases": [], "failed": []}')
@@ -384,7 +371,6 @@ local function requireHook(name, ...)
 end
 require = requireHook
 
-timing('before file load')
 currentCase = testFile
 local okLoad, loadErr = xpcall(function()
     assert(loadfile(testFile))()
@@ -394,7 +380,6 @@ end, function(err)
     end
     return err
 end)
-timing('after file load')
 require = realRequire
 os.exit = loadExit
 lu.LuaUnit.run = luaUnitRun
@@ -637,7 +622,6 @@ local okRun, runErr = xpcall(function()
     end
 
     runner:startSuite(#selected, 0)
-    timing('before cases')
     runner:setupSuite(instances)
 
     for _, caseName in ipairs(selected) do
