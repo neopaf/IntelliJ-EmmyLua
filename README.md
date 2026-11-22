@@ -26,6 +26,16 @@ or extra dependencies on the Lua side.
 See [LUAUNIT.md](LUAUNIT.md) for the full description (layout, discovery
 rules, run configuration, console).
 
+---
+
+## LuaUnit test runner
+
+![LuaUnit test runner](/snapshot/LuaUnit1.png)
+
+![LuaUnit test runner](/snapshot/LuaUnit2.png)
+
+---
+
 ![snapshot](/snapshot/overview.gif)
 
 ## Find usages
