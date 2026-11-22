@@ -137,6 +137,10 @@ class LuaUnitTestConsole(
       * Cmd+C on the node puts on the clipboard (no ":1" line suffix). */
     private val suiteNodePaths = LinkedHashMap<SMTestProxy, String>()
 
+    /** The tests trees of the view (a debug tab keeps its own), found once. */
+    private val testTrees =
+        ArrayList<com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView>()
+
     /**
      * The "(3 passed, 1 failed, 2 ignored, 15 running)" of a group. A category
      * is shown when the tree shows it (the failed and the still running tests
@@ -175,15 +179,38 @@ class LuaUnitTestConsole(
 
     /** Writes the counters of every group node, on the EDT. */
     private fun applyGroupCounts() {
+        installHiddenIgnoredRenderer()
         for ((proxy, label) in groupLabels) {
             proxy.setPresentableName("$label ${countSuffix(proxy)}")
         }
     }
 
-    /** Recounts the groups on the view mode flip (hide passed / hide ignored). */
+    /**
+     * Recounts the groups on the view mode flip (hide passed / hide ignored)
+     * and repaints the tree: a group that holds ignored cases must lose the
+     * "has ignored" mark once those cases are hidden (see
+     * [LuaUnitHiddenIgnoredRenderer]). The icon is picked at paint time, so
+     * the rows are repainted even when their texts did not change.
+     */
     private fun updateGroupCounts() {
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
             applyGroupCounts()
+            testTrees.forEach { it.repaint() }
+        }
+    }
+
+    /**
+     * Puts the icon-correcting wrapper onto every tests tree. The view may
+     * replace its renderer when the model is attached, so this runs again on
+     * every recount — a second wrap is a no-op.
+     */
+    private fun installHiddenIgnoredRenderer() {
+        for (tree in testTrees) {
+            val current = tree.cellRenderer ?: continue
+            if (current !is LuaUnitHiddenIgnoredRenderer) {
+                tree.cellRenderer = LuaUnitHiddenIgnoredRenderer(current, properties)
+                tree.repaint()
+            }
         }
     }
 
@@ -250,11 +277,10 @@ class LuaUnitTestConsole(
         // the first one only, the click in the other served a drag location
         // or nothing at all. The proxy of a path comes from the tree's own
         // API — a tree node is NOT the proxy itself.
-        val trees = ArrayList<com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView>()
-        findTestTrees(consoleView.component, trees)
+        findTestTrees(consoleView.component, testTrees)
         com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
-            .info("copy handler installed on ${trees.size} test tree(s)")
-        for (tree in trees) {
+            .info("copy handler installed on ${testTrees.size} test tree(s)")
+        for (tree in testTrees) {
             tree.transferHandler = object : javax.swing.TransferHandler() {
                 override fun createTransferable(component: javax.swing.JComponent): java.awt.datatransfer.Transferable? {
                     val paths = tree.selectionPaths ?: return null
