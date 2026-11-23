@@ -73,12 +73,13 @@ class LuaUnitConsoleProperties(
      * see [LuaUnitTestConsole.rerunFailedAction].
      */
 
-    override fun getErrorNavigatable(location: Location<*>, stackTrace: String): Navigatable? {
-        val navigatable = LuaUnitTestLocator().parseFrame(stackTrace, configuration.project)?.navigatable
-        com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
-            .info("getErrorNavigatable trace=${stackTrace.take(80)} navigatable=${navigatable != null}")
-        return navigatable
-    }
+    /**
+     * A failed node opens the case's own declaration, not the first frame of
+     * its trace: that frame is the assertion helper (`assertEquals`), not the
+     * test. The frames of the trace printed under the case stay clickable
+     * through the console filter, so nothing is lost.
+     */
+    override fun getErrorNavigatable(location: Location<*>, stackTrace: String): Navigatable? = null
 
     companion object {
         const val FRAMEWORK_NAME = "LuaUnit"

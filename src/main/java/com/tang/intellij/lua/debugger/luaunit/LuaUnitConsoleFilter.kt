@@ -40,17 +40,21 @@ class LuaUnitConsoleFilter(
     private val reference = Regex("""([\w./ -]+\.(?:lua|json|txt|xml|yaml|yml)(?:\.txt)?)(?::(\d+))?""")
 
     override fun applyFilter(line: String, entireLength: Int): Filter.Result? {
-        val match = reference.find(line) ?: return null
-        val file = LuaUnitTestLocator().findFile(project, match.groupValues[1]) ?: return null
-        // A reference without a line opens the file itself (a fixture of the
-        // run points at the whole file, and the runner prints no ":1").
-        val lineNumber = match.groupValues[2].takeIf { it.isNotEmpty() }
-            ?.toIntOrNull()?.minus(1)?.coerceAtLeast(0) ?: 0
-        val start = entireLength - line.length + match.range.first
-        return Filter.Result(
-            start,
-            start + match.groupValues[1].length + (if (match.groupValues[2].isEmpty()) 0 else match.groupValues[2].length + 1),
-            OpenFileHyperlinkInfo(project, file, lineNumber)
-        )
+        val locator = LuaUnitTestLocator()
+        val items = reference.findAll(line).mapNotNull { match ->
+            val file = locator.findFile(project, match.groupValues[1]) ?: return@mapNotNull null
+            // A reference without a line opens the file itself (a fixture of
+            // the run points at the whole file, and the runner prints no ":1").
+            val lineNumber = match.groupValues[2].takeIf { it.isNotEmpty() }
+                ?.toIntOrNull()?.minus(1)?.coerceAtLeast(0) ?: 0
+            val start = entireLength - line.length + match.range.first
+            val end = start + match.groupValues[1].length +
+                (if (match.groupValues[2].isEmpty()) 0 else match.groupValues[2].length + 1)
+            Filter.ResultItem(start, end, OpenFileHyperlinkInfo(project, file, lineNumber))
+        }.toList()
+        // Every reference of the line gets its own link: a trace line may carry
+        // the last frame and the fixtures that follow it (and a log line may
+        // name more than one file), and only the first match used to be lit.
+        return if (items.isEmpty()) null else Filter.Result(items)
     }
 }

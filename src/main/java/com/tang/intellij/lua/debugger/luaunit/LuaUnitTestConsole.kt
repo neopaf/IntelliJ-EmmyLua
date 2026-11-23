@@ -889,21 +889,24 @@ class LuaUnitTestConsole(
                 "failure=${failure?.message?.take(60)} defectBefore=${node.isDefect}"
         )
         if (failure != null) {
-            // The fixtures the case opened go to the very end of its trace;
-            // fixtureFrame drops the meaningless ":1" of a first line.
-            val fixturesText = fixtures.joinToString("") { SuiteOutputKeys.fixtureFrame(it) }
-            val stack = (failure.trace ?: "") + fixturesText
-            // The tree node must always open the case's declaration: the SM
-            // console navigates a failed node by the first frame of its stack
-            // trace, which is the assert inside `test_common_core.lua`, not
-            // the test. The trace is printed below (with clickable links), so
-            // the frames stay one click away without hijacking the node.
+            // The files the case opened go under the trace, as a block of
+            // their own ("fixtures:"), never glued to the last frame.
+            val fixturesText = SuiteOutputKeys.fixturesBlock(fixtures)
+            // The trace of a failure does not end with a newline of its own:
+            // the fixtures start on a line of their own.
+            val trace = if (fixturesText.isEmpty()) failure.trace
+            else (failure.trace?.let { it + (if (it.endsWith("\n")) "" else "\n") } ?: "") + fixturesText
+            // The message and the trace go to the node's failed state, not to
+            // the raw output: the state prints them in that order (message,
+            // then the trace), while a hand-printed trace could land before
+            // the message. The tree node still opens the case's declaration —
+            // see [LuaUnitConsoleProperties.getErrorNavigatable].
             if (failure.expected != null && failure.actual != null) {
                 // The platform's comparison panel with its "<Click to see
                 // difference>" link: (message, stackTrace, actual, expected).
-                node.setTestComparisonFailed(failure.message, null, failure.actual, failure.expected)
+                node.setTestComparisonFailed(failure.message, trace, failure.actual, failure.expected)
             } else {
-                node.setTestFailed(failure.message, null, failure.isError)
+                node.setTestFailed(failure.message, trace, failure.isError)
             }
             // A group (the suite, the section, the root) does not turn red by
             // itself: SMTestProxy does not propagate a child's defect upwards,
@@ -917,17 +920,14 @@ class LuaUnitTestConsole(
                 ancestor = ancestor.parent
             }
             failures.add(LuaUnitFailure(suite.displayName, failure.name))
-            // The message itself is already in the node's output (the failed
-            // state prints it); what it lacks is the stack trace, so only the
-            // trace is added here, once.
-            printTo(node, (failure.trace ?: "") + fixturesText + "\n", failure.isError)
         } else {
             // A green case prints its status, then the files it opened. The
             // green word goes to the console; the fixtures are printed into the
             // case's own output, under it.
             printPassed(node)
-            for (fixture in fixtures) {
-                printTo(node, SuiteOutputKeys.fixtureFrame(fixture), false)
+            val fixturesText = SuiteOutputKeys.fixturesBlock(fixtures)
+            if (fixturesText.isNotEmpty()) {
+                printTo(node, fixturesText, false)
             }
         }
         node.setFinished()
@@ -1159,12 +1159,26 @@ object SuiteOutputKeys {
         )
     }
 
-    fun fixtureFrame(reference: String): String {
-        val path = reference.substringBeforeLast(':')
-        val line = reference.substringAfterLast(':', "1").toIntOrNull() ?: 1
-        // The line of a fixture is almost always the first one, and ":1"
-        // says nothing — the link without it opens the file just as well.
-        val at = if (line > 1) "$path:$line" else path
-        return "\tat fixture($at)\n"
+    /**
+     * The files the case opened, as a block of its own:
+     *
+     * ```
+     * fixtures:
+     *     tests/resources/...
+     * ```
+     *
+     * <p>The paths stay `file:line` references the console filter turns into
+     * links; the ":1" of a first line is dropped, it says nothing.
+     */
+    fun fixturesBlock(fixtures: List<String>): String {
+        if (fixtures.isEmpty()) {
+            return ""
+        }
+        return "fixtures:\n" + fixtures.joinToString("") { reference ->
+            val path = reference.substringBeforeLast(':')
+            val line = reference.substringAfterLast(':', "1").toIntOrNull() ?: 1
+            val at = if (line > 1) "$path:$line" else path
+            "\t$at\n"
+        }
     }
 }

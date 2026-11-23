@@ -552,6 +552,22 @@ local function stripSections(text)
     return (table.concat(kept, '\n'):gsub('%s+$', ''))
 end
 
+--- A case may wrap the real error into its own message:
+--- "...:597: Test failed: NAME - <error>". The failure keeps the name, the
+--- error itself becomes the first frame of the trace (where it belongs): the
+--- TAP-style report shows it under "stack traceback:", not glued to the name.
+local function splitWrappedMessage(message)
+    local at = message:find('Test failed: ', 1, true)
+    if at == nil then
+        return message, nil
+    end
+    local dash = message:find(' - ', at + #'Test failed: ', true)
+    if dash == nil then
+        return message, nil
+    end
+    return message:sub(1, dash - 1), message:sub(dash + 3)
+end
+
 local function startCase(name)
     currentCase = name
     caseFilesSeen = {}
@@ -561,8 +577,20 @@ end
 
 local function recordFailure(status, err)
     local message, expected, actual = diff.extract(err)
+    local reason
+    message, reason = splitWrappedMessage(message)
     failed = failed + 1
     local trace = caseTraceback and stripSections(caseTraceback) or ''
+    -- The wrapped error is the topmost frame: right under the header, where a
+    -- TAP report puts it, not glued to the case name.
+    if reason ~= nil and reason ~= '' then
+        local header = 'stack traceback:'
+        if trace == '' then
+            trace = header .. '\n\t' .. reason
+        elseif trace:sub(1, #header) == header then
+            trace = header .. '\n\t' .. reason .. trace:sub(#header + 1)
+        end
+    end
     -- A traceback with no user frames (only "stack traceback:") adds nothing.
     if trace == 'stack traceback:' or trace == '' then
         trace = nil
