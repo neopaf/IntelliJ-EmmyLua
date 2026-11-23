@@ -21,7 +21,8 @@
     <vendor email="love.tangzx@qq.com">tangzx</vendor>
     <category>Custom Languages</category>
     <description><![CDATA[
-    Support for Lua programming language.<br>
+    Support for the Lua programming language, with a JUnit-style LuaUnit test runner
+    (tests tree, gutter icons, run/debug of cases, rerun of failed tests).<br>
     <p><a href="https://github.com/EmmyLua">Source Code</a> | <a href="https://gitter.im/emmylua/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link">Gitter</a> | <a href="https://emmylua.github.io/donate.html">Donate</a> | <a href="https://emmylua.github.io/?plugin">Doc</a> | <a href="https://github.com/EmmyLua/VSCode-EmmyLua">VSCode-EmmyLua</a></p>
     Features:
     <ul>
@@ -89,6 +90,12 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <strong>1.4.26-paf5</strong>
+    <ul>
+        <li>[FIX] a test file that fails to load turns red instead of leaving every case looking ignored</li>
+        <li>[FIX] failed case output: the message comes before the trace, the files a case opened go into a "fixtures:" block, and every file:line reference of a line is a link</li>
+        <li>[NEW] the plugin description names the LuaUnit test runner right away</li>
+    </ul>
     <strong>1.4.26-paf1</strong>
     <ul>
         <li>luaunit support</li>
