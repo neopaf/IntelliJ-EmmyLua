@@ -92,6 +92,9 @@
     <change-notes><![CDATA[
     <strong>1.4.26-paf5</strong>
     <ul>
+        <li>[NEW] LuaUnit results in the editor: status icons in the gutter, failure inlays with the diff on click, fixture code vision above declarations</li>
+        <li>[NEW] LuaUnit test files, fixtures and the directories above them are tinted in the project view by the last run</li>
+        <li>[FIX] Rerun Failed Tests runs exactly the failed cases and no longer reports "(0)"</li>
         <li>[FIX] a test file that fails to load turns red instead of leaving every case looking ignored</li>
         <li>[FIX] failed case output: the message comes before the trace, the files a case opened go into a "fixtures:" block, and every file:line reference of a line is a link</li>
     </ul>

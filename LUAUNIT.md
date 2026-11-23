@@ -159,12 +159,24 @@ not prose — they never become part of a description.
 - A data file a run saw a case open gets a notification panel:
   `Tests: ✔ TestSuite.test_a, ✖ TestSuite.test_b`. "Show tests..." opens the
   same list as a popup; a click there goes to the declaration of the case.
+- The gutter shows the result of the last run next to the declaration of a
+  case — the `function TestSuite:test_x()` line, or the `id = "..."` row of a
+  generated case. The icons are the ones of the test tree: a green tick for a
+  pass, a crossed circle for a failed assertion (an expected/actual pair), a
+  red error circle for anything else. One line, one icon: the marker sits on
+  the first non-blank character of the line, and the row is red as soon as any
+  of its cases failed.
 - A failed assertion is marked at its own line in the test source: the inlay
-  after the line reads `❌ Expected 200, got 403`. A long message is shortened;
-  a click opens the expected/actual diff (expected on the left, actual on the
-  right), or the whole message when the failure had no two values.
+  after the code reads `-- ❌ Expected 200, got 403`, in the bright red of the
+  palette. A failure with expected/actual values is a link — the scheme's
+  hyperlink colour, underlined, a click opens the diff (expected on the left,
+  actual on the right); an `error()` has no diff, so its text is plain red with
+  no underline. A long message is shortened. A line that carries several
+  failures shows one of them and `(+n errors)` for the rest. The hint goes
+  before a trailing `--` comment, so the comment stays part of the line.
 - Test files and the fixtures they read are tinted in the project view: green
-  when every case that touched them passed, red when one of them failed.
+  when every case that touched them passed, red when one of them failed. A
+  directory is coloured by everything below it.
 - All of the above is runtime-only: it comes from the last run, lives in the
   project's workspace file and is refreshed when the next run finishes.
 
