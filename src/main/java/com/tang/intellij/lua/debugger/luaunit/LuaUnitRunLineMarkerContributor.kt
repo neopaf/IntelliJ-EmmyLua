@@ -180,7 +180,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
 
     /** Runs (or debugs) the scope a fresh configuration [configure] points at. */
     private fun scopeAction(text: String, debug: Boolean, configure: (LuaUnitRunConfiguration) -> Unit): AnAction {
-        return object : AnAction(text, text, AllIcons.Actions.Execute) {
+        return object : AnAction(text, text, icon(debug)) {
             init {
                 // Without mnemonic parsing, to keep the "_" of test names.
                 templatePresentation.setText(text, false)
@@ -241,7 +241,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
     /** Runs (or debugs) the case of [element], reusing the configuration it already has. */
     private fun runAction(element: PsiElement, debug: Boolean): AnAction {
         val text = if (debug) "Debug" else "Run"
-        return object : AnAction(text, text, AllIcons.Actions.Execute) {
+        return object : AnAction(text, text, icon(debug)) {
             init {
                 // Without mnemonic parsing, to keep the "_" of test names.
                 templatePresentation.setText(text, false)
@@ -353,7 +353,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             label != null -> "Run $label"
             else -> "Run"
         }
-        return object : AnAction(text, text, AllIcons.Actions.Execute) {
+        return object : AnAction(text, text, icon(debug)) {
             init {
                 // Without mnemonic parsing: the default setText eats every
                 // "_" of the text (a mnemonic marker), and the file names
@@ -417,6 +417,10 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             .createConfiguration(template as RunConfiguration, factory)
             .also { it.isTemporary = true }
     }
+
+    /** The Run entry keeps the green triangle, the Debug one shows the bug. */
+    private fun icon(debug: Boolean): javax.swing.Icon =
+        if (debug) AllIcons.Actions.StartDebugger else AllIcons.Actions.Execute
 
     private fun executor(debug: Boolean) =
         if (debug) DefaultDebugExecutor.getDebugExecutorInstance() else DefaultRunExecutor.getRunExecutorInstance()
