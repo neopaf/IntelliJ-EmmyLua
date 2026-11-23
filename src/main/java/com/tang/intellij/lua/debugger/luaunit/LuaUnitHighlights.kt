@@ -91,6 +91,10 @@ object LuaUnitHighlights {
             // drops the stamps and runs the passes again.
             InlayHintsPassFactoryInternal.restartDaemonUpdatingHints(project, "LuaUnit: $reason")
             EditorNotifications.getInstance(project).updateAllNotifications()
+            // The project view keeps the presentation of every node it has
+            // already built: without a refresh the tint of a file appears only
+            // when the node is rebuilt for another reason (a click on it).
+            com.intellij.ide.projectView.ProjectView.getInstance(project)?.refresh()
             log.info("highlights refreshed ($reason) in ${System.currentTimeMillis() - started} ms")
         }
     }
