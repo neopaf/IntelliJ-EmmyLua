@@ -807,6 +807,34 @@ class LuaUnitTestConsole(
         }
     }
 
+    /**
+     * The file itself failed before any case could start: it did not load (a
+     * missing module, a syntax error). No case node can take such a failure,
+     * and once it is dropped every case of the file stays silently "not run" —
+     * the tree then reads as "everything is ignored" instead of "the file
+     * failed". The file's own node turns red with the message, which also goes
+     * to the console.
+     */
+    fun onSuiteFailure(suite: LuaUnitSuite, failure: LuaUnitProtocol.Failure) = synchronized(lock) {
+        nowOrDefer { onSuiteFailureNow(suite, failure) }
+    }
+
+    private fun onSuiteFailureNow(suite: LuaUnitSuite, failure: LuaUnitProtocol.Failure) {
+        val node = suite.proxy ?: return
+        // The message is the node's own: a double-click still goes to the
+        // file, not to the failing line of the runner.
+        node.setTestFailed(failure.message, null, failure.isError)
+        val text = buildString {
+            append(failure.message).append('\n')
+            failure.trace?.let { append(it).append('\n') }
+        }
+        printTo(node, text, true)
+        if (::consoleView.isInitialized) {
+            consoleView.print("${suite.key}: ${failure.message}\n", ConsoleViewContentType.ERROR_OUTPUT)
+        }
+        refreshCountsUp(node)
+    }
+
     fun onCaseStarted(suite: LuaUnitSuite, name: String) {
         // Captured at the event, not at the replay: a deferred start must not
         // zero the case's duration.

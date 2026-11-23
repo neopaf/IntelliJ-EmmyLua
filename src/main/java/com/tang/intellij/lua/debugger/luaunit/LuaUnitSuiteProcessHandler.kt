@@ -155,8 +155,16 @@ class LuaUnitOutputConverter(
                 // The trace belongs to the case that just failed; the earlier
                 // output of the case has already been printed.
                 log.info("suite ${suite.key}: FAIL ${event.failure.name}: ${event.failure.message.take(60)}")
-                pendingFailure = event.failure
                 sawCaseFailure = true
+                if (currentCase == null) {
+                    // No case is open: the file itself did not load (a missing
+                    // module, a syntax error). Dropping the record leaves every
+                    // case silently "not run", which reads as "all ignored" —
+                    // the file's own node must carry the failure instead.
+                    console.onSuiteFailure(suite, event.failure)
+                } else {
+                    pendingFailure = event.failure
+                }
             }
             is LuaUnitProtocol.Event.CaseSkipped -> {
                 // luaunit.skip("reason"): the case is ignored, not failed.
