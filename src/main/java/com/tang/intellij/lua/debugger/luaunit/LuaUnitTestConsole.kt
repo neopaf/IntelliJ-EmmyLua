@@ -23,7 +23,9 @@ import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsAdapter
 import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener
 import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.io.FileUtil
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
@@ -39,7 +41,13 @@ class LuaUnitSuite(
     val displayName: String,
     val cases: List<LuaUnitNode.Case>,
     /** The LuaUnit `--pattern`; null runs every case of the file. */
-    val pattern: String?
+    val pattern: String?,
+    /**
+     * Exact case names to run (a rerun of the failed ones). `--pattern` is a
+     * Lua pattern with no alternation, so a list of names cannot be squeezed
+     * into one; the runner takes them one by one.
+     */
+    val caseNames: List<String> = emptyList()
 ) {
     /** Stable identity of the suite (its display name), used as the node key. */
     val key: String get() = displayName
@@ -121,6 +129,14 @@ class LuaUnitTestConsole(
      */
     private val finishedCases: MutableSet<SMTestProxy> =
         java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+
+    /**
+     * The cases of this run, as the editor integrations will see them: where
+     * each case is declared, how it ended and the files it opened. Published
+     * into [LuaUnitRunIndex] once every suite is over — a file of the project
+     * must not flash green from the first case of a run still going.
+     */
+    private val runResults = LinkedHashMap<String, LuaUnitRunIndex.CaseResult>()
 
     /** Port of the mobdebug server under Debug, null otherwise. */
     @Volatile
@@ -370,6 +386,9 @@ class LuaUnitTestConsole(
             if (root == null) {
                 return@invokeLater
             }
+            // The run was stopped: the marks stay hidden no longer. The index
+            // was not touched, so the previous run's results come back.
+            LuaUnitHighlights.finish(configuration.project)
             // A case that has not reported its end never will: mark it not
             // run, the way the end of the whole run does.
             for (proxy in caseProxies.values) {
@@ -588,6 +607,9 @@ class LuaUnitTestConsole(
         suites: List<LuaUnitSuite>,
         processGroup: LuaUnitProcessGroupHandler? = null
     ): List<ProcessHandler> {
+        // The run begins: the marks of the previous one must not be read as
+        // this run's results while it goes.
+        LuaUnitHighlights.start(configuration.project)
         if (debugPort != null) {
             val handlers = ArrayList<ProcessHandler>(suites.size)
             fun startNext(index: Int) {
@@ -600,7 +622,8 @@ class LuaUnitTestConsole(
                 val handler = LuaUnitSuiteProcessHandler(
                     suite, this,
                     LuaUnitRunnerScript.commandLine(
-                        configuration, suite.key, suite.pattern, discover = false, debugPort = debugPort
+                        configuration, suite.key, suite.pattern,
+                        discover = false, debugPort = debugPort, caseNames = suite.caseNames
                     )
                 )
                 processGroup?.track(handler)
@@ -628,7 +651,8 @@ class LuaUnitTestConsole(
                 suite.key,
                 suite.pattern,
                 discover = false,
-                debugPort = debugPort
+                debugPort = debugPort,
+                caseNames = suite.caseNames
             ))
         }
         // The stop button goes through the group (it destroys every tracked
@@ -904,7 +928,16 @@ class LuaUnitTestConsole(
             if (failure.expected != null && failure.actual != null) {
                 // The platform's comparison panel with its "<Click to see
                 // difference>" link: (message, stackTrace, actual, expected).
-                node.setTestComparisonFailed(failure.message, trace, failure.actual, failure.expected)
+                // The message is cut to its first line: a table comparison
+                // carries two whole JSON documents, the panel shows the diff
+                // anyway, and the platform refuses a test state of that size.
+                // The comparison state prints the message, the diff and the
+                // traceback it was given: printing the trace here as well put
+                // it twice into the case's output.
+                // The comparison state prints the message, the diff and then
+                // the traceback it was given: handing the trace over keeps that
+                // order. Printing it separately put it before the message.
+                node.setTestComparisonFailed(shortMessage(failure.message), trace, failure.actual, failure.expected)
             } else {
                 node.setTestFailed(failure.message, trace, failure.isError)
             }
@@ -942,6 +975,136 @@ class LuaUnitTestConsole(
         // what the node (and, summed by the parents, the whole tree) shows.
         caseStarts.remove(key(suite.key, name))?.let { started ->
             node.setDuration(System.currentTimeMillis() - started)
+        }
+        // The editor integrations (code vision, the fixture panel, the project
+        // view) read this map after the run; it is filled per case so a partial
+        // run keeps the records of the cases it did not touch.
+        rememberCaseResult(suite, name, failure, fixtures)
+    }
+
+    /** The file a fixture reference of the protocol points at, in canonical form. */
+    private fun resolveFixture(reference: String): String? {
+        // The runner appends the line it was read at ("path:1"); a fixture is
+        // a whole file, so the suffix goes away.
+        val path = reference.replace(Regex(""":\d+$"""), "").trim()
+        if (path.isEmpty()) {
+            return null
+        }
+        val file = java.io.File(path)
+        val resolved = if (file.isAbsolute) {
+            file
+        } else {
+            // The case opens its files from the working directory of the
+            // configuration, which is not always the project root.
+            val base = configuration.workingDirOrDefault()
+                ?: configuration.project.basePath
+            base?.let { java.io.File(it, path) } ?: file
+        }
+        if (resolved.exists()) {
+            return LuaUnitRunIndex.canonical(resolved.absolutePath)
+        }
+        return LuaUnitTestLocator().findFile(configuration.project, path)
+            ?.let { LuaUnitRunIndex.canonical(it.path) }
+    }
+
+    /** One case of this run: its declaration line, result and fixtures. */
+    private fun rememberCaseResult(
+        suite: LuaUnitSuite,
+        name: String,
+        failure: LuaUnitProtocol.Failure?,
+        fixtures: List<String>
+    ) {
+        val case = suite.cases.firstOrNull { it.name == name || it.displayName == name }
+        val testFile = LuaUnitRunIndex.canonical(absolutePathOf(suite.file))
+        val result = runResults.getOrPut(key(testFile, name)) { LuaUnitRunIndex.CaseResult() }
+        result.testFile = testFile
+        result.caseName = name
+        result.displayName = case?.displayName ?: name
+        result.line = case?.source?.line ?: 1
+        // A generated case is declared by the row of a data module, not by the
+        // suite that runs it: the click must open the table the row is in.
+        result.declarationFile = case?.source?.file
+            ?.let { LuaUnitRunIndex.canonical(absolutePathOf(it)) }
+            ?: testFile
+        result.declarationLine = case?.source?.line ?: 1
+        result.generated = case?.generated == true
+        result.failed = failure != null
+        result.comparison = failure?.expected != null && failure?.actual != null
+        result.fixtures = fixtures.mapNotNull { resolveFixture(it) }.distinct().toMutableList()
+        // The failing line of the trace is the assertion the test wrote, not
+        // the declaration of the case: the editor marks that line and shows
+        // the message there.
+        result.errorFile = ""
+        result.errorLine = 0
+        result.message = ""
+        result.expected = null
+        result.actual = null
+        if (failure != null) {
+            // The record is stored in the workspace file: a table comparison
+            // carries two whole JSON documents, and a state that big takes
+            // long to save (and cannot even be written to the test history).
+            // The editor only needs the beginning of each value.
+            result.message = limit(failure.message)
+            result.expected = failure.expected?.let { limit(it) }
+            result.actual = failure.actual?.let { limit(it) }
+            failureSite(failure, result.declarationFile)?.let { (file, line) ->
+                result.errorFile = file
+                result.errorLine = line
+            } ?: run {
+                // The trace had no frame of the project (a plain `error()` with
+                // no file, say): the declaration is the nearest place to mark.
+                result.errorFile = result.declarationFile
+                result.errorLine = result.declarationLine
+            }
+        }
+    }
+
+    /** The first line of a failure message, trimmed: the diff panel shows the rest. */
+    private fun shortMessage(message: String): String =
+        message.lineSequence().firstOrNull()?.trim().orEmpty()
+
+    /**
+     * The `file:line` of a failure trace that resolves to a real file. A test
+     * often calls a helper of its own (`assertMetrics`); the failure happened
+     * in that helper, but the line the user wants to see is the call of the
+     * test, so a frame of such a helper is skipped when a user frame follows.
+     */
+    private fun failureSite(failure: LuaUnitProtocol.Failure, declarationFile: String): Pair<String, Int>? {
+        val trace = failure.trace ?: return null
+        val frames = ArrayList<Pair<Pair<String, Int>, String>>()
+        for (line in trace.lineSequence()) {
+            val match = FRAME.find(line) ?: continue
+            val file = resolveFixture(match.groupValues[1]) ?: continue
+            val at = match.groupValues[2].toIntOrNull() ?: continue
+            frames.add((file to at) to line)
+        }
+        if (frames.isEmpty()) {
+            return null
+        }
+        return (frames.firstOrNull { !HELPER_FRAME.containsMatchIn(it.second) } ?: frames.first()).first
+    }
+
+    /** Hands the run's cases to the index and repaints everything that reads it. */
+    private fun publishRunResults() {
+        val results = ArrayList(runResults.values)
+        if (results.isEmpty()) {
+            return
+        }
+        val project = configuration.project
+        ApplicationManager.getApplication().invokeLater {
+            if (project.isDisposed) {
+                return@invokeLater
+            }
+            val log = com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+            val started = System.currentTimeMillis()
+            LuaUnitRunIndex.getInstance(project).publish(results)
+            log.info("publish: ${results.size} results in ${System.currentTimeMillis() - started} ms")
+            // The code vision, the inlay hints and the fixture panels are
+            // cached per editor and know nothing about the index: each of them
+            // is invalidated explicitly, or the marks keep the previous run's
+            // state until the IDE is restarted.
+            LuaUnitHighlights.finish(project)
+            log.info("UI update requested in ${System.currentTimeMillis() - started} ms")
         }
     }
 
@@ -1055,6 +1218,10 @@ class LuaUnitTestConsole(
             // suites are plain Lua processes the platform does not parse —
             // this is the only "the run is over" moment there is.
             showStatusLine()
+            // Everything the editor shows about the run is written at once,
+            // when the run is really over: the case records, the code vision
+            // of the tests, the panels of the fixtures and the tree colours.
+            publishRunResults()
             onAllSuitesFinished?.invoke()
         }
     }
@@ -1088,6 +1255,22 @@ class LuaUnitTestConsole(
         "$count $word" + (if (count == 1) "" else "s")
 
     companion object {
+        /** How much of a failure value the stored record keeps. */
+        private const val VALUE_LIMIT = 4000
+
+        private fun limit(value: String): String =
+            if (value.length <= VALUE_LIMIT) value else value.take(VALUE_LIMIT) + "…"
+
+        /** A `file:line` frame of a trace, in the shapes the console links. */
+        private val FRAME = Regex("""([^\s(]+\.(?:lua|json|txt|xml|yaml|yml)(?:\.txt)?):(\d+)""")
+
+        /**
+         * A frame of a helper the test called (`in function 'assertMetrics'`):
+         * the error is inside it, but the assertion is where the test called
+         * it, so the frame itself is not the place to mark.
+         */
+        private val HELPER_FRAME = Regex("""in function '([^']*assert[^']*)'""")
+
         /** Green "PASSED" text of a successful case. */
         private val PASSED_CONTENT_TYPE = ConsoleViewContentType(
             "luaunit.passed",

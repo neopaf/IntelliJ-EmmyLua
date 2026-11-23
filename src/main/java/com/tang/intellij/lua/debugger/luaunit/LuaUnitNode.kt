@@ -70,7 +70,10 @@ sealed class LuaUnitNode {
         /** A commented-out data row ("-- id = 'x'"): shown as ignored. */
         val ignored: Boolean = false,
         /** A trailing "-- ..." on the data row: shown after the name. */
-        val description: String = ""
+        val description: String = "",
+        /** Built in a loop from a data row: the declaration is the row, not a
+         *  function, so its failures belong to the row of the data table. */
+        val generated: Boolean = false
     ) : LuaUnitNode()
 
     /** A `file:line` pair a case (or a fixture) points at. */

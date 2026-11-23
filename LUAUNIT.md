@@ -150,6 +150,24 @@ not prose — they never become part of a description.
   failure traces; the remaining `file.lua:line` references are clickable.
 - Plain test output (`print`, `dbg`) goes to the case node it belongs to.
 
+## In the editor
+
+- The fixtures of a case are shown above its declaration
+  (`function TestSuite:test_x()`) as code vision entries, one per file, by the
+  file name only; a click opens the file. The entries come from the last run —
+  a case that has never run shows none.
+- A data file a run saw a case open gets a notification panel:
+  `Tests: ✔ TestSuite.test_a, ✖ TestSuite.test_b`. "Show tests..." opens the
+  same list as a popup; a click there goes to the declaration of the case.
+- A failed assertion is marked at its own line in the test source: the inlay
+  after the line reads `❌ Expected 200, got 403`. A long message is shortened;
+  a click opens the expected/actual diff (expected on the left, actual on the
+  right), or the whole message when the failure had no two values.
+- Test files and the fixtures they read are tinted in the project view: green
+  when every case that touched them passed, red when one of them failed.
+- All of the above is runtime-only: it comes from the last run, lives in the
+  project's workspace file and is refreshed when the next run finishes.
+
 ## Under the hood
 
 - `LuaTestManifest` — reads `run_tests.lua` (sections, commented-out entries).

@@ -116,7 +116,7 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
             }
             LuaUnitNode.Case(
                 item.name, displayName, LuaUnitProtocol.parseSource(item.source),
-                item.ignored, item.description
+                item.ignored, item.description, item.idLine > 0
             )
         }
     }
