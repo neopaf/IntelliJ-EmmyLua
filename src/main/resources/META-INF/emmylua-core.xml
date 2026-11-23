@@ -79,6 +79,7 @@
 
         <!--codeInsight-->
         <codeInsight.lineMarkerProvider language="Lua" implementationClass="com.tang.intellij.lua.codeInsight.LuaLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="Lua" implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitStatusLineMarkerProvider"/>
         <codeInsight.parameterNameHints language="Lua" implementationClass="com.tang.intellij.lua.codeInsight.LuaParameterHintsProvider"/>
         <codeInsight.parameterInfo language="Lua" implementationClass="com.tang.intellij.lua.codeInsight.LuaParameterInfoHandler"/>
         <codeInsight.template.postfixTemplateProvider language="Lua" implementationClass="com.tang.intellij.lua.codeInsight.postfix.LuaPostfixTemplateProvider"/>
@@ -133,6 +134,12 @@
         <programRunner implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProgramRunner"/>
         <configurationType implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitConfigurationType"/>
         <postStartupActivity implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProjectActivity"/>
+        <!-- what the last run says about tests and their fixtures -->
+        <codeInsight.codeVisionProvider implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitFixtureCodeVision"/>
+        <editorNotificationProvider implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitFixtureNotificationProvider"/>
+        <projectViewNodeDecorator implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProjectViewDecorator"/>
+        <codeInsight.inlayProvider language="Lua" id="luaunit.failures" isEnabledByDefault="true"
+            implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitFailureInlayHints"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.remote.LuaMobDebuggerRunner"/>
         <configurationType implementation="com.tang.intellij.lua.debugger.remote.LuaMobConfigurationType"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.app.LuaAppRunner"/>

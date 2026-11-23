@@ -74,12 +74,48 @@ class LuaUnitConsoleProperties(
      */
 
     /**
-     * A failed node opens the case's own declaration, not the first frame of
-     * its trace: that frame is the assertion helper (`assertEquals`), not the
-     * test. The frames of the trace printed under the case stay clickable
-     * through the console filter, so nothing is lost.
+     * A failed node opens the assertion that broke — the topmost frame of the
+     * trace — for a plain test. A generated case keeps its data row: the
+     * assertion there is a line every row shares.
      */
-    override fun getErrorNavigatable(location: Location<*>, stackTrace: String): Navigatable? = null
+    override fun getErrorNavigatable(location: Location<*>, stackTrace: String): Navigatable? {
+        val project = location.project
+        val virtualFile = location.virtualFile ?: return null
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+            .getDocument(virtualFile) ?: return null
+        val element = location.psiElement ?: return null
+        val line = document.getLineNumber(element.textOffset) + 1
+        val index = LuaUnitRunIndex.getInstance(project)
+        val path = LuaUnitRunIndex.canonical(virtualFile.path)
+        val case = index.casesDeclaredIn(path)
+            .firstOrNull { it.failed && it.declarationLine == line } ?: return null
+        if (case.generated) {
+            // A generated case failed in the body of its generator, but the
+            // user double-clicked the data row: the line that belongs to this
+            // case is the field the assertion named (`SY_SLA_2001`). A row
+            // without such a field keeps its own `id` line.
+            val psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(virtualFile)
+                ?: return null
+            val attribute = LuaUnitDataRows.namedFieldLine(psiFile, document, line, case.message)
+            if (attribute <= 0 || attribute == line) {
+                return null
+            }
+            return com.intellij.openapi.fileEditor.OpenFileDescriptor(
+                project, virtualFile, attribute - 1, 0
+            )
+        }
+        if (case.errorLine <= 0) {
+            return null
+        }
+        if (case.errorFile == case.declarationFile && case.errorLine == case.declarationLine) {
+            return null
+        }
+        val errorFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+            .findFileByPath(case.errorFile) ?: return null
+        return com.intellij.openapi.fileEditor.OpenFileDescriptor(
+            project, errorFile, (case.errorLine - 1).coerceAtLeast(0), 0
+        )
+    }
 
     companion object {
         const val FRAMEWORK_NAME = "LuaUnit"

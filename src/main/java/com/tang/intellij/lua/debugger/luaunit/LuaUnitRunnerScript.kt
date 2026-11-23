@@ -31,6 +31,9 @@ object LuaUnitRunnerScript {
 
     const val RUNNER = "luaunit/emmylua_luaunit.lua"
 
+    /** Separates the exact case names of a rerun inside one `--cases` value. */
+    const val CASE_SEPARATOR: String = "\u0001"
+
     /**
      * Absolute path of the runner script.
      *
@@ -172,7 +175,8 @@ object LuaUnitRunnerScript {
         file: String,
         pattern: String?,
         discover: Boolean,
-        debugPort: Int?
+        debugPort: Int?,
+        caseNames: List<String> = emptyList()
     ): GeneralCommandLine {
         val workingDir = configuration.workingDirOrDefault()
         val commandLine = GeneralCommandLine(configuration.expandMacros(configuration.interpreter.trim()))
@@ -201,12 +205,18 @@ object LuaUnitRunnerScript {
             if (!discover && !pattern.isNullOrBlank()) {
                 commandLine.addParameter("--pattern=$pattern")
             }
+            if (!discover && caseNames.isNotEmpty()) {
+                commandLine.addParameter("--cases=" + caseNames.joinToString(CASE_SEPARATOR))
+            }
             return commandLine
         }
         commandLine.addParameters(runner)
         commandLine.addParameter(if (discover) "--discover=$file" else "--file=$file")
         if (!discover && !pattern.isNullOrBlank()) {
             commandLine.addParameter("--pattern=$pattern")
+        }
+        if (!discover && caseNames.isNotEmpty()) {
+            commandLine.addParameter("--cases=" + caseNames.joinToString(CASE_SEPARATOR))
         }
         return commandLine
     }

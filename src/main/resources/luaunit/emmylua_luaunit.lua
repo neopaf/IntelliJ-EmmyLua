@@ -88,6 +88,10 @@ local discover = options.discover ~= nil or os.getenv('EMLUA_DISCOVER') ~= nil
 -- A Lua pattern that selects one case of the file (LuaUnit's --pattern
 -- semantics); every other case is still discovered but does not run.
 local casePattern = options.pattern or os.getenv('EMLUA_PATTERN')
+-- Exact case names (a rerun of the failed cases). A Lua pattern has no
+-- alternation, so a list of names cannot be one pattern; the IDE joins the
+-- names with \1 and the filter below compares them by equality.
+local caseList = options.cases or os.getenv('EMLUA_CASES')
 
 -- --------------------------------------------------------------- json
 
@@ -454,7 +458,29 @@ end)
 -- trailing character. A pattern that matches several cases runs all of them,
 -- which is the same as LuaUnit's own --pattern semantics.
 local selected = cases
-if casePattern ~= nil and casePattern ~= '' then
+local wanted = nil
+if caseList ~= nil and caseList ~= '' then
+    wanted = {}
+    for name in caseList:gmatch('([^' .. string.char(1) .. ']+)') do
+        wanted[name] = true
+    end
+end
+if wanted ~= nil then
+    local kept = {}
+    for _, caseName in ipairs(cases) do
+        if wanted[caseName] then
+            kept[#kept + 1] = caseName
+        end
+    end
+    if #kept == 0 then
+        emitMark('FAIL', '{"name": ' .. quote(testFile) .. ', "status": "ERROR", "message": '
+            .. quote('No case matches "' .. caseList .. '" (candidates: '
+                .. table.concat(cases, ', ') .. ')') .. '}')
+        emitMark('DONE', '{"name": ' .. quote(testFile) .. ', "cases": [' .. quote(testFile) .. '], "failed": 1}')
+        os.exit(1)
+    end
+    selected = kept
+elseif casePattern ~= nil and casePattern ~= '' then
     local kept = {}
     for _, caseName in ipairs(cases) do
         -- A plain find first: a case name is a literal ("Frame 958-1"), and
@@ -532,24 +558,37 @@ local function isFrameworkFrame(line)
 end
 
 local function stripSections(text)
+    -- The diff module writes the expected/actual block before the traceback.
+    -- Cut the block out, not everything from it on: the frames still follow.
     local at = text:find(EXPECTED_MARK, 1, true)
     if at ~= nil then
-        text = text:sub(1, at - 1)
+        local trail = text:find('stack traceback:', at, true)
+        text = trail and (text:sub(1, at - 1) .. text:sub(trail)) or text:sub(1, at - 1)
     end
     at = text:find(ACTUAL_MARK, 1, true)
     if at ~= nil then
-        text = text:sub(1, at - 1)
+        local trail = text:find('stack traceback:', at, true)
+        text = trail and (text:sub(1, at - 1) .. text:sub(trail)) or text:sub(1, at - 1)
     end
     local kept = {}
     for line in (text .. '\n'):gmatch('(.-)\n') do
         local stripped = line:gsub('^%s+', '')
-        -- Keep the "stack traceback:" header and the user frames only.
+        -- Keep the "stack traceback:" header and the user frames only. The
+        -- frames are indented with a tab in the stock interpreter and with
+        -- spaces in some builds: accept any indentation.
         if line:find('^stack traceback:', 1) or
-            (line:find('^\t', 1) and not isFrameworkFrame(stripped)) then
+            (line:find('^%s+%S', 1) and not isFrameworkFrame(stripped)) then
             kept[#kept + 1] = line
         end
     end
-    return (table.concat(kept, '\n'):gsub('%s+$', ''))
+    local result = table.concat(kept, '\n'):gsub('%s+$', '')
+    -- Nothing survived the filter (a traceback of the runner's own frames
+    -- only, or an unexpected format): keep the raw trace rather than lose the
+    -- only pointer to the failing line.
+    if result == '' or result == 'stack traceback:' then
+        result = text:gsub('%s+$', '')
+    end
+    return result
 end
 
 --- A case may wrap the real error into its own message:
@@ -575,12 +614,22 @@ local function startCase(name)
     emitMark('CASE', name)
 end
 
-local function recordFailure(status, err)
+local function recordFailure(status, err, statusTrace)
     local message, expected, actual = diff.extract(err)
     local reason
     message, reason = splitWrappedMessage(message)
     failed = failed + 1
-    local trace = caseTraceback and stripSections(caseTraceback) or ''
+    -- LuaUnit's own protectedCall wraps the case in xpcall and keeps the
+    -- traceback of the moment the case failed, but its own stripping may leave
+    -- the bare header. Our wrapper still has the full traceback, so the first
+    -- one that really names a frame wins.
+    local trace = ''
+    if statusTrace ~= nil then
+        trace = stripSections(statusTrace)
+    end
+    if trace == '' or trace == 'stack traceback:' then
+        trace = caseTraceback and stripSections(caseTraceback) or ''
+    end
     -- The wrapped error is the topmost frame: right under the header, where a
     -- TAP report puts it, not glued to the case name.
     if reason ~= nil and reason ~= '' then
@@ -629,7 +678,7 @@ local okRun, runErr = xpcall(function()
                 -- luaunit.skip("reason"): the case is ignored, not failed.
                 emitMark('SKIP', tostring(status.msg or ''))
             elseif status.status ~= 'SUCCESS' then
-                recordFailure(status.status == 'ERROR' and 'ERROR' or 'FAIL', status.msg)
+                recordFailure(status.status == 'ERROR' and 'ERROR' or 'FAIL', status.msg, status.trace)
             end
         end
         return lu.LuaUnit.updateStatus(self, status)

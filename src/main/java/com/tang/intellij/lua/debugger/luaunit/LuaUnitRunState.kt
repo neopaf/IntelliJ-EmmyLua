@@ -135,24 +135,75 @@ internal fun suitesFor(configuration: LuaUnitRunConfiguration, tree: LuaUnitNode
         val name = entry.substringAfter('\u0000')
         byFile.getOrPut(java.nio.file.Path.of(file)) { ArrayList() }.add(name)
     }
-    return byFile.map { (file, names) ->
+    // The rerun tree keeps the groups of the manifest: a suite knows its
+    // section, and the console builds the section nodes from it. The order of
+    // the manifest is kept as well (the map is filled in the failed-list
+    // order, which is the console's order, not the manifest's).
+    data class RerunSuite(val section: Int, val file: Int, val suite: LuaUnitSuite)
+
+    val found = ArrayList<RerunSuite>()
+    for ((file, names) in byFile) {
         // The discovered tree knows every case of the file: only the failed
         // ones become nodes — that is what runs and what the tree must show.
         // The failed list carries the suite's display path (often relative to
         // the project), the tree an absolute one — either may extend the other.
-        val known = tree.sections.asSequence().flatMap { it.suites.asSequence() }
-            .firstOrNull { it.file.endsWith(file) || file.endsWith(it.file) }
+        var section: LuaUnitNode.Section? = null
+        var known: LuaUnitNode.Suite? = null
+        for (candidate in tree.sections) {
+            val suite = candidate.suites.firstOrNull {
+                it.file.endsWith(file) || file.endsWith(it.file)
+            }
+            if (suite != null) {
+                section = candidate
+                known = suite
+                break
+            }
+        }
         val cases = known?.cases?.filter { it.name in names } ?: emptyList()
         com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit").info(
-            "rerun suite file=$file known=${known?.file} cases=${cases.map { it.name }} names=$names"
+            "rerun suite file=$file section=${section?.title} known=${known?.file} " +
+                "cases=${cases.map { it.name }} names=$names"
         )
-        LuaUnitSuite(null, file, file.toString(), cases, names.joinToString("|") { luaPattern(it) })
+        val sectionIndex = tree.sections.indexOf(section).coerceAtLeast(0)
+        val fileIndex = section?.suites?.indexOf(known).takeIf { it != null && it >= 0 } ?: 0
+        found.add(
+            RerunSuite(
+                sectionIndex, fileIndex,
+                LuaUnitSuite(
+                    section?.title?.ifEmpty { null },
+                    file,
+                    known?.displayName ?: file.toString(),
+                    cases,
+                    // Not one `|`-joined Lua pattern: `|` is a literal there,
+                    // so the pattern matched nothing and every suite of a
+                    // rerun reported (0).
+                    pattern = null,
+                    caseNames = names
+                )
+            )
+        )
     }
+    return found.sortedWith(compareBy({ it.section }, { it.file })).map { it.suite }
 }
 
-/** A case name as a Lua pattern: dots and friends must not read as magic. */
-internal fun luaPattern(name: String): String =
-    name.replace(Regex("([%^$()%.%[%]*+%-?])"), "%$1")
+/**
+ * A case name as a Lua pattern: the pattern magic characters must not read as
+ * magic. Every one of them is prefixed with `%`; a regular expression with a
+ * character class is not an option here — a dash at the end of the class
+ * silently turned into a range (`%-?` covered `0`-`9`), and the pattern of a
+ * case then contained `M%3UA` and `Frame %0%6`, which matched nothing.
+ */
+internal fun luaPattern(name: String): String {
+    val magic = "%^$().[]*+-?"
+    val text = StringBuilder(name.length * 2)
+    for (c in name) {
+        if (magic.indexOf(c) >= 0) {
+            text.append('%')
+        }
+        text.append(c)
+    }
+    return text.toString()
+}
 
 /** The console, the suite processes (and the debugger) of the run's tab. */
 class LuaUnitExecutionResult(

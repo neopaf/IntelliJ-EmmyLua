@@ -94,7 +94,6 @@
     <ul>
         <li>[FIX] a test file that fails to load turns red instead of leaving every case looking ignored</li>
         <li>[FIX] failed case output: the message comes before the trace, the files a case opened go into a "fixtures:" block, and every file:line reference of a line is a link</li>
-        <li>[NEW] the plugin description names the LuaUnit test runner right away</li>
     </ul>
     <strong>1.4.26-paf1</strong>
     <ul>
