@@ -29,6 +29,11 @@ import java.awt.datatransfer.StringSelection
 /**
  * Copies the selected test tree node's name, from the tree's context menu.
  *
+ * <p>A case copies the name LuaUnit would accept: `test_ccri_cps_fail` for a
+ * declared function, the row's own `ccri_int` for a generated case, never the
+ * description the tree shows in parentheses. A group copies its name without
+ * the live "(N passed, ...)" counter.
+ *
  * <p>Cmd+C works while the tree has the focus (the console installs a
  * TransferHandler for it), but a double-click on a case opens its declaration
  * and moves the focus to the editor — the shortcut then copies the editor,
@@ -63,10 +68,32 @@ class LuaUnitCopyTestNameAction : AnAction("Copy Test Name", null, AllIcons.Acti
         CopyPasteManager.getInstance().setContents(StringSelection(text))
     }
 
-    /** A case copies everything it shows (its description included); a group
-      *  drops the live "(N passed, ...)" counter of its name. */
+    /** A case copies its LuaUnit name; a group drops the live "(N passed, ...)"
+     *  counter of its name. */
     private fun copyableText(proxy: SMTestProxy): String {
+        if (proxy.isLeaf) {
+            proxy.getUserData(COPY_NAME)?.let { return it }
+        }
         val shown = proxy.presentableName ?: proxy.name ?: return ""
         return if (proxy.isLeaf) shown else shown.replace(Regex("""\s+\([^)]*\)$"""), "")
+    }
+
+    companion object {
+        private val COPY_NAME: com.intellij.openapi.util.Key<String> =
+            com.intellij.openapi.util.Key.create("luaunit.copyName")
+
+        /**
+         * What "Copy Test Name" puts on the clipboard for [case]: a declared
+         * case keeps its `test_` prefix (`test_ccri_cps_fail`), a generated
+         * one is the data row's own name (`ccri_int`) — and neither carries the
+         * description the tree shows in parentheses.
+         */
+        fun copyName(case: LuaUnitNode.Case): String =
+            if (case.generated) case.displayName else "test_" + case.displayName
+
+        /** Remembers [case]'s copyable name on its tree node. */
+        fun remember(proxy: SMTestProxy, case: LuaUnitNode.Case) {
+            proxy.putUserData(COPY_NAME, copyName(case))
+        }
     }
 }
