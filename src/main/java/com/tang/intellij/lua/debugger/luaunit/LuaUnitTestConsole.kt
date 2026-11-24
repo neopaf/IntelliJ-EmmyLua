@@ -722,6 +722,7 @@ class LuaUnitTestConsole(
                         if (case.description.isBlank()) case.displayName
                         else "${case.displayName} (${case.description})"
                     )
+                    LuaUnitCopyTestNameAction.remember(caseProxy, case)
                     if (case.ignored) {
                         // A commented-out case: no run. The tree paints it as
                         // ignored by its state; the name stays the case's own

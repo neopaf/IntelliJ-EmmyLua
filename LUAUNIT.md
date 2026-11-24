@@ -149,6 +149,10 @@ not prose — they never become part of a description.
 - Framework frames (`luaunit.lua`, the runner itself, `[C]`) are stripped from
   failure traces; the remaining `file.lua:line` references are clickable.
 - Plain test output (`print`, `dbg`) goes to the case node it belongs to.
+- **Copy Test Name** in the tree's context menu copies the name LuaUnit itself
+  accepts: `test_ccri_cps_fail` for a declared function, the row's own
+  `ccri_int` for a generated case. The description the tree shows in
+  parentheses is never copied.
 
 ## In the editor
 
@@ -165,20 +169,27 @@ not prose — they never become part of a description.
   pass, a crossed circle for a failed assertion (an expected/actual pair), a
   red error circle for anything else. One line, one icon: the marker sits on
   the first non-blank character of the line, and the row is red as soon as any
-  of its cases failed.
-- A failed assertion is marked at its own line in the test source: the inlay
-  after the code reads `-- ❌ Expected 200, got 403`, in the bright red of the
-  palette. A failure with expected/actual values is a link — the scheme's
-  hyperlink colour, underlined, a click opens the diff (expected on the left,
-  actual on the right); an `error()` has no diff, so its text is plain red with
-  no underline. A long message is shortened. A line that carries several
-  failures shows one of them and `(+n errors)` for the rest. The hint goes
-  before a trailing `--` comment, so the comment stays part of the line.
+  of its cases failed. A commented-out case (a `--[[ ... ]]` block or a
+  `-- id = "..."` row) keeps its case in the tree but never runs, so from the
+  start it carries the crossed circle — before any run, and inside a block the
+  mark sits on the declaration line itself, not on the `--[[` opener.
+- A failed assertion is marked at the line a double-click on the case opens:
+  the assertion's own line, even when it lives in another file (a helper such
+  as `tests/test_common.lua`). The inlay after the code reads
+  `-- ❌ Expected 200, got 403`, in the bright red of the palette. A failure
+  with expected/actual values is a link — the scheme's hyperlink colour,
+  underlined, a click opens the diff (expected on the left, actual on the
+  right); an `error()` has no diff, so its text is plain red with no underline.
+  A long message is shortened. A line that carries several failures shows one
+  of them and `(+n errors)` for the rest. The hint goes before a trailing `--`
+  comment, so the comment stays part of the line.
 - Test files and the fixtures they read are tinted in the project view: green
   when every case that touched them passed, red when one of them failed. A
   directory is coloured by everything below it.
-- All of the above is runtime-only: it comes from the last run, lives in the
-  project's workspace file and is refreshed when the next run finishes.
+- Results and fixtures are runtime-only: they come from the last run, live in
+  the project's workspace file and are refreshed when the next run finishes.
+  The ignored mark is the exception — it comes from the source text and is
+  there before any run.
 
 ## Under the hood
 
