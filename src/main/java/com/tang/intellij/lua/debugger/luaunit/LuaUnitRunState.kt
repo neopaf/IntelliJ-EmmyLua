@@ -32,8 +32,8 @@ import com.intellij.openapi.progress.ProgressManager
  * console.
  *
  * <p>1. The tree is discovered: the manifest gives the sections and files,
- *    then every file is asked for its cases (`--discover`, a Lua process that
- *    loads the file but runs nothing).
+ *    then every file gives its cases by a text scan (see
+ *    [LuaUnitTextDiscovery]).
  * <p>2. One Lua process per file is started, all of them at once, all feeding
  *    one test console (see [LuaUnitTestConsole]).
  */

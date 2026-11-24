@@ -22,8 +22,8 @@ import java.nio.file.Path
  * The suite tree of a LuaUnit run configuration, before anything runs.
  *
  * <p>`run_tests.lua` supplies the sections and the files; the cases of a file
- * are discovered by `emmylua_luaunit.lua --discover`, so the tree shows what is
- * going to run (and where each case lives) without executing a case.
+ * are read from its text (see [LuaUnitTextDiscovery]), so the tree shows what
+ * is going to run (and where each case lives) without executing a case.
  *
  * <p>The tree is exactly the shape the console tree gets:
  *

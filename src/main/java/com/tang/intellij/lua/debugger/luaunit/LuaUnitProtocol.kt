@@ -44,18 +44,15 @@ object LuaUnitProtocol {
         val trace: String?
     )
 
-    /** The summary of a suite: every discovered case name and the failure count. */
-    data class Done(val cases: List<String>, val failed: Int, val discover: Boolean)
-
-    /** A discovered case of a file: its name and where it is declared. */
-    data class Discovered(val name: String, val source: String?)
+    /** The summary of a suite: every case name and the failure count. */
+    data class Done(val cases: List<String>, val failed: Int)
 
     sealed class Event {
         data class CaseStarted(val name: String) : Event()
         data class CaseFailed(val failure: Failure) : Event()
         data class CaseSkipped(val reason: String) : Event()
         data class Fixture(val file: String) : Event()
-        data class Finished(val done: Done, val discovered: List<Discovered>) : Event()
+        data class Finished(val done: Done) : Event()
     }
 
     fun parseLine(line: String): Event? {
@@ -110,21 +107,13 @@ object LuaUnitProtocol {
 
         fun decodeDone(text: String): Event.Finished? {
             val fields = objectOf(text) ?: return null
-            val discover = fields["discover"] == true
             val failed = (fields["failed"] as? String)?.toIntOrNull() ?: (fields["failed"] as? Int) ?: 0
+            // The runner writes the case names as plain strings.
             val cases = mutableListOf<String>()
-            val discovered = mutableListOf<Discovered>()
             (fields["cases"] as? List<*>)?.forEach { item ->
-                when (item) {
-                    is String -> cases.add(item)
-                    is Map<*, *> -> {
-                        val name = item["name"] as? String ?: return@forEach
-                        cases.add(name)
-                        discovered.add(Discovered(name, item["source"] as? String))
-                    }
-                }
+                (item as? String)?.let { cases.add(it) }
             }
-            return Event.Finished(Done(cases, failed, discover), discovered)
+            return Event.Finished(Done(cases, failed))
         }
 
         private fun objectOf(text: String): Map<String, Any?>? {

@@ -3,7 +3,6 @@
 -- One process per test file (a "suite"), started by the Java side with:
 --
 --   lua emmylua_luaunit.lua --file=tests/ss7/test_ss7_common.lua [--pattern=...]
---   lua emmylua_luaunit.lua --discover=tests/ss7/test_ss7_common.lua
 --
 -- Everything the runner reports goes through small marker sections, each on its
 -- own line; the IDE splits stdout by them:
@@ -17,9 +16,6 @@
 --
 -- Everything printed between the markers belongs to the current case and is
 -- shown as that case's output.
---
--- "--discover" does not run anything: it reports the case names and their
--- declaration lines so the IDE tree can be built before running.
 
 local MARK = '@@EMLUA_LUAUNIT_'
 
@@ -83,8 +79,7 @@ do
     end
 end
 
-local testFile = options.file or options.discover or os.getenv('EMLUA_FILE')
-local discover = options.discover ~= nil or os.getenv('EMLUA_DISCOVER') ~= nil
+local testFile = options.file or os.getenv('EMLUA_FILE')
 -- A Lua pattern that selects one case of the file (LuaUnit's --pattern
 -- semantics); every other case is still discovered but does not run.
 local casePattern = options.pattern or os.getenv('EMLUA_PATTERN')
@@ -507,16 +502,6 @@ elseif casePattern ~= nil and casePattern ~= '' then
         os.exit(1)
     end
     selected = kept
-end
-
-if discover then
-    local parts = {}
-    for _, caseName in ipairs(cases) do
-        parts[#parts + 1] = '{"name": ' .. quote(caseName) .. ', "source": '
-            .. nilable(sources[caseName]) .. '}'
-    end
-    emitMark('DONE', '{"name": ' .. quote(testFile) .. ', "discover": true, "cases": [' .. table.concat(parts, ', ') .. ']}')
-    os.exit(0)
 end
 
 -- ---------------------------------------------------------------- execution
