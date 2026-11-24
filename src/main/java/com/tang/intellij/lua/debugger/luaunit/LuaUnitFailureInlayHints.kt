@@ -205,6 +205,19 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
                     sites.add(Site(line, textFor(case), case))
                 }
             }
+            // The assertion of a case declared in another file: a helper of the
+            // suite (the data comparison lives in test_common.lua). The tree's
+            // double-click opens this very line, so the hint sits here, not on
+            // the declaration back in the suite.
+            for (failure in index.failuresIn(path)) {
+                if (failure.declarationFile == path) {
+                    continue
+                }
+                if (failure.errorLine < 1 || failure.errorLine > lineCount) {
+                    continue
+                }
+                sites.add(Site(failure.errorLine, textFor(failure), failure))
+            }
             // A line shared by several cases (a loop over a table, or two
             // generators) says nothing about one case: it is left alone.
             for (group in shared.groupBy { it.line }.values) {
@@ -401,6 +414,13 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
                     file, document, failure.declarationLine, failure.message
                 )
                 return if (attribute > 0) attribute else failure.declarationLine
+            }
+            // The assertion lives in another file (a helper the case calls):
+            // the tree's double-click goes there, and the mark has to be at
+            // the same line — a hint on the declaration would point at a place
+            // the click never takes the reader.
+            if (failure.errorFile.isNotEmpty() && failure.errorFile != failure.declarationFile) {
+                return 0
             }
             return if (
                 failure.errorFile == failure.declarationFile &&
