@@ -1014,7 +1014,13 @@ class LuaUnitTestConsole(
         failure: LuaUnitProtocol.Failure?,
         fixtures: List<String>
     ) {
-        val case = suite.cases.firstOrNull { it.name == name || it.displayName == name }
+        // A file may keep an old copy of a test under `--[[ ... ]]` next to the
+        // one that really runs; both carry the same LuaUnit name. The run's
+        // case is the live one — a commented-out twin is never executed, so its
+        // line must not get the result, the fixtures or the failure mark.
+        val case = suite.cases.firstOrNull {
+            !it.ignored && (it.name == name || it.displayName == name)
+        } ?: suite.cases.firstOrNull { it.name == name || it.displayName == name }
         val testFile = LuaUnitRunIndex.canonical(absolutePathOf(suite.file))
         val result = runResults.getOrPut(key(testFile, name)) { LuaUnitRunIndex.CaseResult() }
         result.testFile = testFile
