@@ -26,12 +26,14 @@ Everything in this repository is done in **English**:
   working tree.
 - Releasing (version bump, both artifacts, tag, GitHub release) is described in
   the `release` skill.
-- After building the plugin, **always launch the sandbox** so the change can be
-  tried by hand: `./gradlew runIde -DIDEA_VER=2025.3 --offline` (a long-running
-  GUI, start it in the background and leave it running). The user closes the
-  sandbox themselves when they are done testing: never restart it afterwards,
-  and never treat a closed sandbox as a failure. The sandbox IDE log is under
-  `build/2025.3/idea-sandbox/IU-2025.3/log/idea.log`.
+- After building the plugin for a piece of work, **launch the sandbox** so the
+  change can be tried by hand: `./gradlew runIde -DIDEA_VER=2025.3 --offline`
+  (a long-running GUI, start it in the background and leave it running). The
+  user closes the sandbox themselves when they are done testing: never restart
+  it afterwards, and never treat a closed sandbox as a failure. The sandbox IDE
+  log is under `build/2025.3/idea-sandbox/IU-2025.3/log/idea.log`.
+- **After a release, do not launch the sandbox at all** — the release is the
+  end of the work, the user starts the IDE when they want to check it.
 
 ## Sandbox
 

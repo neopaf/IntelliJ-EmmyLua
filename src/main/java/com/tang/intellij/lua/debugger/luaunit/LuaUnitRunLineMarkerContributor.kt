@@ -124,7 +124,11 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             ?: PsiTreeUtil.getParentOfType(element, LuaFuncDef::class.java, false)
             ?: PsiTreeUtil.getParentOfType(element, LuaLocalFuncDef::class.java, false)
         if (func != null && isTopLevelTest(func)) {
-            if (element.textRange.startOffset != func.textRange.startOffset) {
+            // A `---` doc comment is a CHILD of the definition (the binder
+            // makes it the first element), so the node starts on the comment's
+            // first line, not on the `function` keyword. The icon belongs to
+            // the line of the declaration itself.
+            if (!startsDeclaration(element, func)) {
                 return null
             }
             val name = LuaUnitCaseAtCaret.find(func.containingFile, func)?.displayName
@@ -301,6 +305,38 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         // A function declared inside another function body is a helper, not a case.
         return PsiTreeUtil.getParentOfType(func, LuaFuncDef::class.java, true) == null &&
                 PsiTreeUtil.getParentOfType(func, LuaClassMethodDef::class.java, true) == null
+    }
+
+    /** The doc comment bound to [func] (it is a child of the definition), or null. */
+    private fun boundComment(func: PsiElement): PsiElement? = when (func) {
+        is LuaClassMethodDef -> func.comment
+        is LuaFuncDef -> func.comment
+        is LuaLocalFuncDef -> func.comment
+        else -> null
+    }
+
+    /**
+     * True when [element] is the first non-blank leaf of the declaration
+     * itself — the `function` (or `local`) keyword below the doc comment. A
+     * documented definition starts its text range on the comment, and a
+     * marker there would sit on the prose, not on the function.
+     */
+    private fun startsDeclaration(element: PsiElement, func: PsiElement): Boolean {
+        if (element is com.intellij.psi.PsiWhiteSpace) {
+            return false
+        }
+        val start = boundComment(func)?.textRange?.endOffset ?: func.textRange.startOffset
+        val offset = element.textRange.startOffset
+        if (offset < start) {
+            return false
+        }
+        val text = element.containingFile.text
+        for (index in start until offset) {
+            if (!text[index].isWhitespace()) {
+                return false
+            }
+        }
+        return true
     }
 
     private fun isDataEntry(literal: LuaLiteralExpr): Boolean {
