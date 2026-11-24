@@ -17,9 +17,9 @@ A release = bump the version → build **both** artifacts → tag → GitHub rel
 - Bump: `sed -i '' 's/^version = .*/version = <ver>/' gradle.properties` and
   commit `chore: bump version to <ver>` (English, like the whole repository).
 - **Stop the sandbox before building**: `pkill -f "com.intellij.idea.Main"`,
-  otherwise `runIde` holds `build/` and the build fights it. Start the sandbox
-  again after the release (project rule: launch it after a build; the user
-  closes it themselves).
+  otherwise `runIde` holds `build/` and the build fights it. Do **not** start
+  it again after the release: after a release the sandbox is not launched at
+  all (the user starts the IDE themselves when they want to check it).
 
 ## 1. Build both artifacts
 
@@ -96,7 +96,6 @@ tagName,assets` — both zips present, the release is Latest.
 
 ## 4. After the release
 
-- Launch the sandbox: `./gradlew runIde -DIDEA_VER=2025.3 --offline` (in the
-  background, leave it running; the user closes it themselves).
+- Do **not** launch the sandbox: the release ends the work.
 - Push nothing else "while at it"; Jira versions and similar only when asked.
 - A short report: version, release link, asset list, commits.
