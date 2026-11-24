@@ -64,41 +64,100 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
     }
 
     /**
-     * The standard notification background with a row of links of our own: the
-     * panel's own text sits in the middle and its links on the right, and the
-     * names have to start at the left edge, right after the icon.
+     * The links of the header: one line, comma separated, wrapped by the
+     * panel's width. A rich text pane is the only standard component that
+     * keeps several links in one flowing paragraph and wraps them.
      */
     private fun createPanel(project: Project, tests: List<LuaUnitRunIndex.CaseResult>): JComponent {
         val panel = EditorNotificationPanel(EditorNotificationPanel.Status.Info)
         panel.removeAll()
-        val rows = JPanel()
-        rows.layout = BoxLayout(rows, BoxLayout.Y_AXIS)
-        rows.isOpaque = false
-        // Two files often declare cases with the same display name (the same
-        // data table feeds several generators): the file name tells them apart.
-        val duplicates = tests.groupingBy { it.displayName }.eachCount()
-            .filterValues { it > 1 }
-            .keys
-        for (test in tests) {
-            val label = if (test.displayName in duplicates) {
-                java.io.File(test.testFile).name + ": " + test.displayName
-            } else {
-                test.displayName
-            }
-            val link = HyperlinkLabel()
-            link.setHyperlinkText(label)
-            link.foreground = if (test.failed) FAILED_COLOR else PASSED_COLOR
-            link.alignmentX = Component.LEFT_ALIGNMENT
-            link.addHyperlinkListener { event ->
-                if (event.eventType == HyperlinkEvent.EventType.ACTIVATED) {
-                    openTest(project, test)
-                }
-            }
-            rows.add(link)
-        }
         panel.add(JBLabel(AllIcons.Nodes.Test), BorderLayout.WEST)
-        panel.add(rows, BorderLayout.CENTER)
+        panel.add(linksPane(project, tests), BorderLayout.CENTER)
         return panel
+    }
+
+    private fun linksPane(project: Project, tests: List<LuaUnitRunIndex.CaseResult>): JComponent {
+        val ordered = tests.sortedWith(compareBy({ it.displayName.lowercase() }, { it.testFile }))
+        val shown = ordered.take(MAX_SHOWN)
+        val rest = ordered.drop(MAX_SHOWN)
+        val html = StringBuilder("<html><body style='margin:0'>")
+        fun link(href: String, text: String, color: Color) {
+            html.append("<a href=\"").append(href).append("\" style=\"color:#")
+                .append(String.format("%06X", color.rgb and 0xFFFFFF))
+                .append("\">").append(escape(text)).append("</a>")
+        }
+        shown.forEachIndexed { index, test ->
+            if (index > 0) {
+                html.append(", ")
+            }
+            link("t$index", label(shown, test), if (test.failed) FAILED_COLOR else PASSED_COLOR)
+        }
+        if (rest.isNotEmpty()) {
+            if (shown.isNotEmpty()) {
+                html.append(", ")
+            }
+            // Only the text inside the parentheses is a link.
+            html.append("(")
+            link("more", "+${rest.size} more", LINK_COLOR)
+            html.append(")")
+        }
+        html.append("</body></html>")
+        val pane = javax.swing.JEditorPane("text/html", html.toString())
+        pane.isEditable = false
+        pane.isOpaque = false
+        pane.font = com.intellij.util.ui.UIUtil.getLabelFont()
+        pane.putClientProperty(javax.swing.JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
+        pane.addHyperlinkListener { event ->
+            if (event.eventType != HyperlinkEvent.EventType.ACTIVATED) {
+                return@addHyperlinkListener
+            }
+            val href = event.description ?: return@addHyperlinkListener
+            if (href == "more") {
+                showMore(project, pane, rest)
+                return@addHyperlinkListener
+            }
+            val index = href.removePrefix("t").toIntOrNull() ?: return@addHyperlinkListener
+            shown.getOrNull(index)?.let { test -> openTest(project, test) }
+        }
+        return pane
+    }
+
+    /** The name to show: the file name tells apart two cases of the same name. */
+    private fun label(all: List<LuaUnitRunIndex.CaseResult>, test: LuaUnitRunIndex.CaseResult): String {
+        val duplicates = all.groupingBy { it.displayName }.eachCount().filterValues { it > 1 }.keys
+        return if (test.displayName in duplicates) {
+            java.io.File(test.testFile).name + ": " + test.displayName
+        } else {
+            test.displayName
+        }
+    }
+
+    private fun escape(text: String): String =
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    /**
+     * The tests the header does not show: a popup with an incremental search
+     * (the chooser builder filters by the typed text), alphabetical.
+     */
+    private fun showMore(project: Project, anchor: JComponent, tests: List<LuaUnitRunIndex.CaseResult>) {
+        com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(tests)
+            .setTitle("Tests")
+            .setNamerForFiltering { it.displayName }
+            .setRenderer(object : com.intellij.ui.SimpleListCellRenderer<LuaUnitRunIndex.CaseResult>() {
+                override fun customize(
+                    list: javax.swing.JList<out LuaUnitRunIndex.CaseResult>,
+                    value: LuaUnitRunIndex.CaseResult,
+                    index: Int,
+                    selected: Boolean,
+                    hasFocus: Boolean
+                ) {
+                    text = label(tests, value)
+                }
+            })
+            .setItemChosenCallback { test -> openTest(project, test) }
+            .createPopup()
+            .showInCenterOf(anchor)
     }
 
     /** Opens the declaration of a case: the suite, or the data row it comes from. */
@@ -109,7 +168,11 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
     }
 
     companion object {
+        /** How many test links the header shows before folding the rest. */
+        private const val MAX_SHOWN = 10
+
         private val PASSED_COLOR: Color = JBColor(0x59A869, 0x499C54)
         private val FAILED_COLOR: Color = JBColor(0xDB5860, 0xC7222D)
+        private val LINK_COLOR: Color = JBColor(0x1A73E8, 0x589DF6)
     }
 }

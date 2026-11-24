@@ -143,8 +143,18 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         ) {
             val root = LuaUnitProjectRoot.of(manifest)
             val line = file.text.substring(0, literal.textRange.startOffset).count { it == '\n' } + 1
+            // The marker sits on the row's *name*: the `desc` line when the
+            // generator names the case by it, the `id` line otherwise. The
+            // rest of the navigation (the case node, the fixtures, the result)
+            // points at the same line.
+            val normalized = diskPath.toAbsolutePath().normalize()
             val isCaseLine = root != null && LuaUnitTextDiscovery.casesCached(manifest, diskPath, root)
-                .any { it.idLine == line }
+                .any { case ->
+                    val source = case.source
+                    val colon = source.lastIndexOf(':')
+                    colon > 0 && source.substring(colon + 1).toIntOrNull() == line &&
+                        java.nio.file.Path.of(source.substring(0, colon)).toAbsolutePath().normalize() == normalized
+                }
             if (isCaseLine) {
                 return info("Run this case", element)
             }
@@ -211,10 +221,49 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             AllIcons.RunConfigurations.TestState.Run,
             arrayOf(
                 scopeAction("Run", false, configure),
-                scopeAction("Debug", true, configure)
+                scopeAction("Debug", true, configure),
+                modifyScopeAction(configure)
             ),
             Function { tooltip }
         )
+
+    /**
+     * Opens the settings of the scope [configure] sets up. The configuration is
+     * temporary until the user saves it, so the entry creates it, selects it
+     * and opens the dialog with it.
+     */
+    private fun modifyScopeAction(configure: (LuaUnitRunConfiguration) -> Unit): AnAction {
+        val text = "Modify Run Configuration..."
+        return object : AnAction(text, text, AllIcons.General.GearPlain) {
+            init {
+                templatePresentation.setText(text, false)
+            }
+
+            override fun actionPerformed(event: AnActionEvent) {
+                val project = event.project ?: return
+                val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
+                val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
+                    ?: return
+                configure(template)
+                openSettings(project, template, event)
+            }
+        }
+    }
+
+    /** Adds the temporary [template] to the manager, selects it and edits it. */
+    private fun openSettings(
+        project: Project,
+        template: LuaUnitRunConfiguration,
+        event: AnActionEvent
+    ) {
+        val settings = reuseOrCreate(project, template) ?: return
+        val runManager = RunManager.getInstance(project)
+        if (settings !in runManager.allSettings) {
+            runManager.addConfiguration(settings)
+        }
+        runManager.selectedConfiguration = settings
+        com.intellij.execution.actions.EditRunConfigurationsAction().actionPerformed(event)
+    }
 
     /** Runs (or debugs) the scope a fresh configuration [configure] points at. */
     private fun scopeAction(text: String, debug: Boolean, configure: (LuaUnitRunConfiguration) -> Unit): AnAction {
@@ -259,11 +308,30 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         if (text.length < 2 || (text.first() != '"' && text.first() != '\'')) {
             return false
         }
-        // The key of the field must be exactly `id` (or ["id"] / ['id']), not a
-        // mere prefix like `identifier`; the leading name is matched whole.
+        // The key of the field must be exactly `id`/`desc` (or ["id"] /
+        // ['id']), not a mere prefix like `identifier`; the leading name is
+        // matched whole. `desc` is the row's case name when the generator
+        // reads it first, so its literal is the marker's anchor too.
         val field = literal.parent?.text?.trimStart() ?: return false
         val name = field.takeWhile { it.isLetterOrDigit() || it == '_' }
-        return name == "id" || field.startsWith("[\"id\"]") || field.startsWith("['id']")
+        return name == "id" || name == "desc" ||
+            field.startsWith("[\"id\"]") || field.startsWith("['id']") ||
+            field.startsWith("[\"desc\"]") || field.startsWith("['desc']")
+    }
+
+    /** True when the literal is the value of the row's `desc` field. */
+    private fun isDescField(literal: LuaLiteralExpr): Boolean {
+        val field = literal.parent?.text?.trimStart() ?: return false
+        val name = field.takeWhile { it.isLetterOrDigit() || it == '_' }
+        return name == "desc" || field.startsWith("[\"desc\"]") || field.startsWith("['desc']")
+    }
+
+    /** True when the row of the literal has a `desc` field besides the `id`. */
+    private fun hasDescSibling(literal: LuaLiteralExpr): Boolean {
+        val row = PsiTreeUtil.getParentOfType(
+            literal, com.tang.intellij.lua.psi.LuaTableExpr::class.java, false
+        ) ?: return false
+        return row.findField("desc") != null
     }
 
     /** One icon, a Run and a Debug entry. */
@@ -271,9 +339,30 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         val provider = Function<PsiElement, String> { tooltip }
         return Info(
             AllIcons.RunConfigurations.TestState.Run,
-            arrayOf(runAction(element, false), runAction(element, true)),
+            arrayOf(runAction(element, false), runAction(element, true), modifyElementAction(element)),
             provider
         )
+    }
+
+    /** Opens the settings of the case [element] declares. */
+    private fun modifyElementAction(element: PsiElement): AnAction {
+        val text = "Modify Run Configuration..."
+        return object : AnAction(text, text, AllIcons.General.GearPlain) {
+            init {
+                templatePresentation.setText(text, false)
+            }
+
+            override fun actionPerformed(event: AnActionEvent) {
+                val project = event.project ?: return
+                val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
+                val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
+                    ?: return
+                if (!LuaUnitRunConfigurationProducer().configureFor(element, template)) {
+                    return
+                }
+                openSettings(project, template, event)
+            }
+        }
     }
 
     /** Runs (or debugs) the case of [element], reusing the configuration it already has. */
@@ -304,6 +393,11 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
     ): Info? {
         val literal = PsiTreeUtil.getParentOfType(element, LuaLiteralExpr::class.java, false) ?: return null
         if (!isDataEntry(literal) || element.textRange.startOffset != literal.textRange.startOffset) {
+            return null
+        }
+        // The `desc` of a row names the case: the marker sits there, and the
+        // `id` literal of the same row stays plain data.
+        if (!isDescField(literal) && hasDescSibling(literal)) {
             return null
         }
         val raw = literal.text

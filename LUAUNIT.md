@@ -145,7 +145,10 @@ not prose — they never become part of a description.
 - A failed case shows the assertion message and, for `assertEquals`-style
   failures, an **expected/actual diff** viewer.
 - The files a case opened during its run (fixtures, `.json` resources) are
-  printed under the result, as `at fixture(path:line)` frames.
+  recorded by the run and shown by the editor — above the case and in the
+  fixture's own panel. The console output no longer prints them as
+  `at fixture(path:line)` frames (the block is commented out in
+  `LuaUnitTestConsole.applyCaseFinished` and can be restored).
 - Framework frames (`luaunit.lua`, the runner itself, `[C]`) are stripped from
   failure traces; the remaining `file.lua:line` references are clickable.
 - Plain test output (`print`, `dbg`) goes to the case node it belongs to.
@@ -156,10 +159,13 @@ not prose — they never become part of a description.
 
 ## In the editor
 
-- The fixtures of a case are shown above its declaration
-  (`function TestSuite:test_x()`) as code vision entries, one per file, by the
-  file name only; a click opens the file. The entries come from the last run —
-  a case that has never run shows none.
+- The fixtures of a case are shown in a block above its declaration
+  (`function TestSuite:test_x()`) by file name; every file is a link of its own
+  (the directory is kept for colliding base names), and a folder whose files
+  are all among the fixtures is one link (`cca/*`) that opens a popup with its
+  files. The entries come from the last run — a case that has never run shows
+  none. The block is an editor inlay, not code vision: a code vision provider
+  keeps one entry per line, so a list of links cannot be built that way.
 - A data file a run saw a case open gets a notification panel:
   `Tests: ✔ TestSuite.test_a, ✖ TestSuite.test_b`. "Show tests..." opens the
   same list as a popup; a click there goes to the declaration of the case.

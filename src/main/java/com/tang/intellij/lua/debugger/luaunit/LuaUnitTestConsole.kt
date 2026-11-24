@@ -914,13 +914,18 @@ class LuaUnitTestConsole(
                 "failure=${failure?.message?.take(60)} defectBefore=${node.isDefect}"
         )
         if (failure != null) {
-            // The files the case opened go under the trace, as a block of
-            // their own ("fixtures:"), never glued to the last frame.
-            val fixturesText = SuiteOutputKeys.fixturesBlock(fixtures)
-            // The trace of a failure does not end with a newline of its own:
-            // the fixtures start on a line of their own.
-            val trace = if (fixturesText.isEmpty()) failure.trace
-            else (failure.trace?.let { it + (if (it.endsWith("\n")) "" else "\n") } ?: "") + fixturesText
+            // Fixtures are not printed into the case's output any more: the
+            // list duplicated the fixtures the editor already shows (code
+            // vision above the case, the fixture's own panel) and cluttered
+            // the trace. The record still reaches the run index below, so the
+            // editor integrations keep working. To bring the block back,
+            // uncomment the three lines and restore the `trace` expression.
+            // val fixturesText = SuiteOutputKeys.fixturesBlock(fixtures)
+            // // The trace of a failure does not end with a newline of its own:
+            // // the fixtures start on a line of their own.
+            // val trace = if (fixturesText.isEmpty()) failure.trace
+            // else (failure.trace?.let { it + (if (it.endsWith("\n")) "" else "\n") } ?: "") + fixturesText
+            val trace = failure.trace
             // The message and the trace go to the node's failed state, not to
             // the raw output: the state prints them in that order (message,
             // then the trace), while a hand-printed trace could land before
@@ -955,14 +960,16 @@ class LuaUnitTestConsole(
             }
             failures.add(LuaUnitFailure(suite.displayName, failure.name))
         } else {
-            // A green case prints its status, then the files it opened. The
-            // green word goes to the console; the fixtures are printed into the
-            // case's own output, under it.
-            printPassed(node)
-            val fixturesText = SuiteOutputKeys.fixturesBlock(fixtures)
-            if (fixturesText.isNotEmpty()) {
-                printTo(node, fixturesText, false)
-            }
+            // A green case prints neither its "PASSED" line nor its fixtures
+            // any more (the fixtures of a failure are dropped the same way —
+            // see the branch above): the console keeps the failures only, the
+            // results are in the tree. Uncomment the lines to bring the output
+            // back.
+            // printPassed(node)
+            // val fixturesText = SuiteOutputKeys.fixturesBlock(fixtures)
+            // if (fixturesText.isNotEmpty()) {
+            //     printTo(node, fixturesText, false)
+            // }
         }
         node.setFinished()
         finishedCases.add(node)

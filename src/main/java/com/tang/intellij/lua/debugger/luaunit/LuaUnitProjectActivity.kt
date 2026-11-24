@@ -24,6 +24,12 @@ class LuaUnitProjectActivity : ProjectActivity {
             Path.of(basePath, "tests", "run_tests.lua")
         ).firstOrNull { Files.isRegularFile(it) } ?: return
 
+        // The results of the previous session are restored from the workspace
+        // file, but the editors restored with the project were created before
+        // the index was loaded: their fixture blocks are built here, once the
+        // project is up.
+        LuaUnitHighlights.refresh(project, "project opened")
+
         val runManager = RunManager.getInstance(project)
         val type = LuaUnitConfigurationType.getInstance()
         if (runManager.allConfigurationsList.any { it.type === type }) {
