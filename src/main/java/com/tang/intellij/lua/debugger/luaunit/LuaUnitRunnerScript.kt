@@ -175,7 +175,6 @@ object LuaUnitRunnerScript {
         configuration: LuaUnitRunConfiguration,
         file: String,
         pattern: String?,
-        discover: Boolean,
         debugPort: Int?,
         caseNames: List<String> = emptyList()
     ): GeneralCommandLine {
@@ -199,24 +198,24 @@ object LuaUnitRunnerScript {
             // name ("@tests/x.lua") would never match it.
             val absolute = java.io.File(workingDir, file).canonicalFile
             commandLine.addParameters(runner)
-            commandLine.addParameter(if (discover) "--discover=$absolute" else "--file=$absolute")
+            commandLine.addParameter("--file=$absolute")
             // A case run keeps its pattern under Debug as well: without it
             // the process would run every case of the file and stop in
             // whichever one hits a breakpoint first.
-            if (!discover && !pattern.isNullOrBlank()) {
+            if (!pattern.isNullOrBlank()) {
                 commandLine.addParameter("--pattern=$pattern")
             }
-            if (!discover && caseNames.isNotEmpty()) {
+            if (caseNames.isNotEmpty()) {
                 commandLine.addParameter("--cases=" + caseNames.joinToString(CASE_SEPARATOR))
             }
             return commandLine
         }
         commandLine.addParameters(runner)
-        commandLine.addParameter(if (discover) "--discover=$file" else "--file=$file")
-        if (!discover && !pattern.isNullOrBlank()) {
+        commandLine.addParameter("--file=$file")
+        if (!pattern.isNullOrBlank()) {
             commandLine.addParameter("--pattern=$pattern")
         }
-        if (!discover && caseNames.isNotEmpty()) {
+        if (caseNames.isNotEmpty()) {
             commandLine.addParameter("--cases=" + caseNames.joinToString(CASE_SEPARATOR))
         }
         return commandLine

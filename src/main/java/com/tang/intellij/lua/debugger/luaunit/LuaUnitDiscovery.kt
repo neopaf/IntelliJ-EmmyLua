@@ -16,22 +16,20 @@
 
 package com.tang.intellij.lua.debugger.luaunit
 
-import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.openapi.util.SystemInfoRt
 import java.io.File
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 
 /**
  * Discovery of the suite tree: which files run, and which cases each of them
  * declares.
  *
  * <p>The manifest decides the files and their sections; a case's LuaUnit name
- * and its declaration line are read from the file itself by a Lua process that
- * loads the file but runs nothing (`--discover`). The IDE could not parse Lua
- * test files on its own: the case set is created by the file's own code (a
- * loop over a data table is the normal way to build cases in this project), so
- * only running the file's top level gives the real list.
+ * and its declaration line are read from the file's text by
+ * [LuaUnitTextDiscovery]. The IDE could not parse arbitrary Lua, but the shapes
+ * this project uses are plain to read, and a text scan is what the tree needs:
+ * the case set may be created by the file's own code (a loop over a data table
+ * is the normal way to build cases), and [LuaUnitTextDiscovery] reads those
+ * generator loops.
  *
  * <p>Discovery stops after [MAX_DISCOVERY_FAILURES] files that fail to load: at
  * that point the tree would be mostly red error nodes and a run is pointless.
@@ -121,59 +119,7 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
         }
     }
 
-    // ---------------------------------------------------------------- lua
-
-    class Result(
-        val exitCode: Int,
-        val discovered: List<LuaUnitProtocol.Discovered>,
-        val done: LuaUnitProtocol.Done?,
-        val problems: List<String>
-    )
-
-    internal fun run(file: Path, discover: Boolean): Result {
-        val relative = relativeName(file)
-        val commandLine = LuaUnitRunnerScript.commandLine(
-            configuration,
-            relative,
-            null,
-            discover,
-            debugPort = null
-        )
-        val process = commandLine.createProcess()
-        val stdout = StringBuilder()
-        val stderr = StringBuilder()
-        val outThread = Thread { pump(process.inputStream, stdout) }.apply { isDaemon = true }
-        val errThread = Thread { pump(process.errorStream, stderr) }.apply { isDaemon = true }
-        outThread.start()
-        errThread.start()
-        val finished = process.waitFor(DISCOVERY_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        if (!finished) {
-            process.destroyForcibly()
-        }
-        outThread.join(2000)
-        errThread.join(2000)
-
-        var discovered = listOf<LuaUnitProtocol.Discovered>()
-        var done: LuaUnitProtocol.Done? = null
-        val problems = ArrayList<String>()
-        for (line in stdout.toString().split('\n')) {
-            val event = LuaUnitProtocol.parseLine(line)
-            when (event) {
-                is LuaUnitProtocol.Event.Finished -> {
-                    done = event.done
-                    discovered = event.discovered
-                }
-                is LuaUnitProtocol.Event.CaseFailed -> problems.add(event.failure.message)
-                else -> Unit
-            }
-        }
-        if (stderr.isNotEmpty()) {
-            problems.add(stderr.toString().trim())
-        }
-        return Result(if (finished) process.exitValue() else -1, discovered, done, problems.filter { it.isNotEmpty() })
-    }
-
-    /** The file name the runner is started with: relative to the working directory. */
+    /** The file name the suite node is named with: relative to the working directory. */
     private fun relativeName(file: Path): String {
         val workingDir = configuration.workingDirOrDefault()
         val absolute = file.toAbsolutePath().normalize()
@@ -199,22 +145,5 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
 
     companion object {
         private const val MAX_DISCOVERY_FAILURES = 5
-        private const val DISCOVERY_TIMEOUT_SECONDS = 120L
-    }
-}
-
-/** Reads [stream] into [target] byte by byte: the protocol is line based and
- *  a marker must never be split by a charset decoder boundary. */
-private fun pump(stream: java.io.InputStream, target: StringBuilder) {
-    try {
-        val buffer = ByteArray(8192)
-        while (true) {
-            val read = stream.read(buffer)
-            if (read < 0) {
-                break
-            }
-            target.append(String(buffer, 0, read, Charsets.UTF_8))
-        }
-    } catch (ignored: java.io.IOException) {
     }
 }

@@ -623,7 +623,7 @@ class LuaUnitTestConsole(
                     suite, this,
                     LuaUnitRunnerScript.commandLine(
                         configuration, suite.key, suite.pattern,
-                        discover = false, debugPort = debugPort, caseNames = suite.caseNames
+                        debugPort = debugPort, caseNames = suite.caseNames
                     )
                 )
                 processGroup?.track(handler)
@@ -650,7 +650,6 @@ class LuaUnitTestConsole(
                 configuration,
                 suite.key,
                 suite.pattern,
-                discover = false,
                 debugPort = debugPort,
                 caseNames = suite.caseNames
             ))
