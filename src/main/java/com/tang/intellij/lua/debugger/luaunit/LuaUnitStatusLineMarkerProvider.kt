@@ -41,6 +41,10 @@ import java.nio.file.Path
  * one. The slow pass (a list of all elements at once) put a second marker
  * on the same line when the daemon split the file into ranges — a failed
  * `id` showed two icons.
+ *
+ * <p>The declaration of a suite table (`SomeSuite = {}`) gets the same mark,
+ * aggregated over the tests declared on that table — the way the test tree
+ * paints a suite node.
  */
 class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
 
@@ -68,7 +72,18 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         if (offset == first) {
             val declared = index.casesDeclaredIn(path).filter { it.declarationLine == line }
             if (declared.isNotEmpty()) {
-                return statusMarker(element, declared)
+                return statusMarker(element, declared, "LuaUnit")
+            }
+            // The suite's own line: its state is the state of its tests, the
+            // way the test tree paints a suite node. The name comes from the
+            // file itself (`function SomeSuite:test_x()`), so a suite called
+            // anything at all gets its mark.
+            val suite = LuaUnitSuites.declaredAt(chars, offset)
+            if (suite != null) {
+                val cases = index.casesDeclaredIn(path).filter { it.caseName.startsWith("$suite.") }
+                if (cases.isNotEmpty()) {
+                    return statusMarker(element, cases, "LuaUnit: $suite")
+                }
             }
         }
         // The ignored mark: only a comment can declare a case that never
@@ -106,7 +121,8 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
     /** The result of the last run: a tick, a cross or the error circle. */
     private fun statusMarker(
         element: PsiElement,
-        declared: List<LuaUnitRunIndex.CaseResult>
+        declared: List<LuaUnitRunIndex.CaseResult>,
+        label: String
     ): LineMarkerInfo<*> {
         val failed = declared.any { it.failed }
         // The very icons the test tree paints: a green tick for a pass, a
@@ -117,7 +133,7 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
             declared.any { it.failed && !it.comparison } -> PoolOfTestIcons.ERROR_ICON
             else -> PoolOfTestIcons.FAILED_ICON
         }
-        val tooltip = if (failed) "LuaUnit: failed" else "LuaUnit: passed"
+        val tooltip = if (failed) "$label failed" else "$label passed"
         return LineMarkerInfo(
             element, element.textRange, icon,
             com.intellij.util.Function { tooltip }, null,

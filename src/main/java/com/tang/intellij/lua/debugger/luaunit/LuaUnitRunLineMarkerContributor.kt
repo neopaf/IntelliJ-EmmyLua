@@ -111,7 +111,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             return dataEntryInfo(element, manifest, diskPath)
         }
 
-        // The declaration of the suite itself ("TestSuite = {}"): its line
+        // The declaration of the suite itself ("SomeSuite = {}"): its line
         // runs the cases of that table only, not the whole file (a file may
         // hold more than one suite).
         suiteAt(element, file)?.let { name ->
@@ -168,34 +168,14 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
 
     /**
      * The name of the suite table declared on the element's line
-     * (`TestSuite = {}`, `local TestSuite = {}`), or null. Only the first leaf
+     * (`SomeSuite = {}`, `local SomeSuite = {}`), or null. Only the first leaf
      * of the line answers: the marker must sit once.
+     *
+     * <p>The name is not fixed: it is the one the file's own test functions
+     * are declared on (`function SomeSuite:test_x()`), see [LuaUnitSuites].
      */
-    private fun suiteAt(element: PsiElement, file: LuaPsiFile): String? {
-        val text = file.text
-        val offset = element.textRange.startOffset
-        if (offset >= text.length) {
-            return null
-        }
-        var lineStart = text.lastIndexOf('\n', (offset - 1).coerceAtLeast(0)) + 1
-        if (lineStart < 0 || lineStart > offset) {
-            lineStart = 0
-        }
-        var first = lineStart
-        while (first < offset && text[first].isWhitespace()) {
-            first++
-        }
-        if (first != offset) {
-            return null
-        }
-        val lineEnd = text.indexOf('\n', offset).let { if (it < 0) text.length else it }
-        val match = SUITE_DECLARATION.matchEntire(text.substring(lineStart, lineEnd).trim()) ?: return null
-        val name = match.groupValues[1]
-        return if (name.contains("Test", ignoreCase = true)) name else null
-    }
-
-    /** `TestSuite = {}` (a plain empty table the tests are put into). */
-    private val SUITE_DECLARATION = Regex("""(?:local\s+)?([A-Za-z_]\w*)\s*=\s*\{\s*}""")
+    private fun suiteAt(element: PsiElement, file: LuaPsiFile): String? =
+        LuaUnitSuites.declaredAt(file.text, element.textRange.startOffset)
 
     /** True when [element] is the very first leaf of its file. */
     private fun isFirstLeaf(element: PsiElement): Boolean =
