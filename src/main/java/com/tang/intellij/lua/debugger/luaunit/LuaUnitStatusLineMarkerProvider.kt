@@ -20,27 +20,30 @@ import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.execution.testframework.PoolOfTestIcons
 import com.intellij.openapi.editor.markup.GutterIconRenderer
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.tang.intellij.lua.psi.LuaTypes
+import java.nio.file.Path
 
 /**
- * The result of the last run in the gutter: a green tick or a red cross to the
- * left of the line that declares a case — a test function, or the `id = "..."`
- * row of a generated case. One row feeds several generators, so the row is red
- * as soon as any of its cases failed.
+ * The gutter mark of a case's line: a green tick or a red cross after a run,
+ * and the crossed circle of an ignored case — before any run as well.
  *
- * <p>The gutter is the only place an icon can sit next to a line: the code
- * vision above a line is text only, and the word PASSED/FAILED without the
- * tree's own icon reads worse than the icon alone.
+ * <p>A commented-out case never runs, so the run index knows nothing about it.
+ * Its mark comes from the text discovery ([LuaUnitIgnoredCases]) and sits on
+ * the declaration line: the line of the commented-out `function`, or the
+ * `id = ...` line of a commented-out data row. A block comment holds a whole
+ * region as one token, so its mark is placed on the ignored line inside it,
+ * not on the `--[[` opener.
+ *
+ * <p>One marker per line: the only leaf that answers is the first non-blank
+ * one. The slow pass (a list of all elements at once) put a second marker
+ * on the same line when the daemon split the file into ranges — a failed
+ * `id` showed two icons.
  */
 class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
 
-    /**
-     * One marker per line: the only leaf that answers is the first non-blank
-     * one. The slow pass (a list of all elements at once) put a second marker
-     * on the same line when the daemon split the file into ranges — a failed
-     * `id` showed two icons.
-     */
     override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
         if (LuaUnitHighlights.isRunning() || element.firstChild != null) {
             return null
@@ -60,15 +63,51 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         while (first < lineEnd && (chars[first] == ' ' || chars[first] == '\t')) {
             first++
         }
-        if (offset != first) {
-            return null
-        }
         val index = LuaUnitRunIndex.getInstance(project)
         val path = LuaUnitRunIndex.canonical(virtualFile.path)
-        val declared = index.casesDeclaredIn(path).filter { it.declarationLine == line }
-        if (declared.isEmpty()) {
+        if (offset == first) {
+            val declared = index.casesDeclaredIn(path).filter { it.declarationLine == line }
+            if (declared.isNotEmpty()) {
+                return statusMarker(element, declared)
+            }
+        }
+        // The ignored mark: only a comment can declare a case that never
+        // runs. A line comment starts its line; a block comment covers the
+        // lines of every case it hides.
+        val type = element.node.elementType
+        val isComment = type == LuaTypes.SHORT_COMMENT ||
+                type == LuaTypes.BLOCK_COMMENT ||
+                type == LuaTypes.DOC_COMMENT
+        if (!isComment) {
             return null
         }
+        val ignored = LuaUnitIgnoredCases.ignoredIn(Path.of(virtualFile.path))
+        if (ignored.isEmpty()) {
+            return null
+        }
+        val start = element.textRange.startOffset
+        val end = element.textRange.endOffset
+        val target = ignored.firstOrNull { case ->
+            val lineStartOffset = document.getLineStartOffset(
+                (case.declarationLine - 1).coerceIn(0, document.lineCount - 1)
+            )
+            lineStartOffset in start..end
+        } ?: return null
+        val targetOffset = document.getLineStartOffset(
+            (target.declarationLine - 1).coerceIn(0, document.lineCount - 1)
+        )
+        return LineMarkerInfo(
+            file, TextRange(targetOffset, targetOffset + 1), PoolOfTestIcons.IGNORED_ICON,
+            com.intellij.util.Function { "LuaUnit: ignored (${target.caseName})" }, null,
+            GutterIconRenderer.Alignment.LEFT
+        )
+    }
+
+    /** The result of the last run: a tick, a cross or the error circle. */
+    private fun statusMarker(
+        element: PsiElement,
+        declared: List<LuaUnitRunIndex.CaseResult>
+    ): LineMarkerInfo<*> {
         val failed = declared.any { it.failed }
         // The very icons the test tree paints: a green tick for a pass, a
         // crossed circle for a failed assertion (an expected/actual pair)
