@@ -120,6 +120,21 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
         name = full
     }
 
+    /**
+     * Points this configuration at one suite of one test file: every case of
+     * that table. The file is still the process; the cases are selected by the
+     * LuaUnit `--pattern` of the suite's name (`^TestSuite%.`).
+     */
+    fun configureSuite(file: Path, suite: String) {
+        scopePath = file.toString()
+        scopeKind = Kind.CASE
+        scopeName = suite
+        val escaped = suite.replace("%", "%%")
+        casePattern = "^$escaped%."
+        workingDir = LuaUnitProjectRoot.of(file)?.toString() ?: workingDir
+        name = suite
+    }
+
     /** Points this configuration at one section of the manifest. */
     fun configureSection(manifest: Path, section: String) {
         scopePath = manifest.toString()

@@ -111,10 +111,11 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             return dataEntryInfo(element, manifest, diskPath)
         }
 
-        // The declaration of the suite itself ("TestSuite = {}"): the file
-        // holds the tests of that table, so its line runs the whole file.
+        // The declaration of the suite itself ("TestSuite = {}"): its line
+        // runs the cases of that table only, not the whole file (a file may
+        // hold more than one suite).
         suiteAt(element, file)?.let { name ->
-            return info("Run $name", element)
+            return scopeInfo("Run $name") { it.configureSuite(diskPath, name) }
         }
 
         // A case's function: "function T:test_x()" parses as LuaClassMethodDef,
