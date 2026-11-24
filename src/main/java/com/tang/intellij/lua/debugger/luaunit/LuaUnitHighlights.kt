@@ -16,11 +16,8 @@
 
 package com.tang.intellij.lua.debugger.luaunit
 
-import com.intellij.codeInsight.codeVision.CodeVisionHost
 import com.intellij.codeInsight.daemon.impl.InlayHintsPassFactoryInternal
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
 import com.intellij.ui.EditorNotifications
 
@@ -69,27 +66,13 @@ object LuaUnitHighlights {
             }
             val log = com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
             val started = System.currentTimeMillis()
-            val manager = FileEditorManager.getInstance(project)
-            val host = project.getService(CodeVisionHost::class.java)
-            if (host != null) {
-                for (file in manager.openFiles) {
-                    for (editor in manager.getAllEditors(file)) {
-                        val textEditor = editor as? TextEditor ?: continue
-                        // The host keeps one lens list per editor/provider and
-                        // never asks the provider again on its own.
-                        host.invalidateProvider(
-                            CodeVisionHost.LensInvalidateSignal(
-                                textEditor.editor,
-                                listOf(LuaUnitFixtureCodeVision.ID)
-                            )
-                        )
-                    }
-                }
-            }
             // Inlay hints remember the modification stamp they were built for:
             // a plain daemon restart keeps the old hints, and only this call
             // drops the stamps and runs the passes again.
             InlayHintsPassFactoryInternal.restartDaemonUpdatingHints(project, "LuaUnit: $reason")
+            // The fixture links are block inlays of the editor: they are built
+            // by this provider, not by the code vision host.
+            LuaUnitFixtureBlockInlays.refresh(project)
             EditorNotifications.getInstance(project).updateAllNotifications()
             // The project view keeps the presentation of every node it has
             // already built: without a refresh the tint of a file appears only
