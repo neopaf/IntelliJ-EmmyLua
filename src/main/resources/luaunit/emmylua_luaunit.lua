@@ -394,19 +394,24 @@ elseif not okLoad then
 end
 
 -- Cases the loaded file declares: "Class.test_method" or a plain testFunction.
+--
+-- A suite table is named by the file itself ("ABCGroup", "Tests", ...): there
+-- is no fixed "Test" prefix to look for. Every global table is walked instead,
+-- and the methods starting with "test" are what makes it a suite. `_G` itself
+-- is skipped: it holds every global, its own test functions included, and the
+-- walk would list each of them twice.
 local cases = {}
 do
-    local seenClasses = {}
     for name, value in pairs(_G) do
-        if name:lower():sub(1, 4) == 'test' and name ~= 'TEST_ENV' then
-            if type(value) == 'table' then
+        if name ~= 'TEST_ENV' then
+            if type(value) == 'table' and value ~= _G then
                 for methodName, method in pairs(value) do
                     if type(methodName) == 'string' and type(method) == 'function'
                         and methodName:lower():sub(1, 4) == 'test' then
                         cases[#cases + 1] = name .. '.' .. methodName
                     end
                 end
-            elseif type(value) == 'function' then
+            elseif type(value) == 'function' and name:lower():sub(1, 4) == 'test' then
                 cases[#cases + 1] = name
             end
         end

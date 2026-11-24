@@ -102,16 +102,14 @@ class LuaUnitTestConsole(
     /** The group nodes (manifest sections), closed when every suite is done. */
     private val sectionProxies = ArrayList<SMTestProxy>()
 
+    /**
+     * The suite-table nodes of the files that hold more than one suite
+     * (`ABCGroup`, `Tests`, ...), closed with the sections.
+     */
+    private val classProxies = ArrayList<SMTestProxy>()
+
     /** How many suite processes have reported their end. */
     private var finishedSuites = 0
-
-    /**
-     * True once every suite has reported its end: after that the counters
-     * must not claim running cases — script-style suites report no per-case
-     * events, and their nodes would stay "running" forever.
-     */
-    @Volatile
-    private var allSuitesDone = false
 
     /** When each running case started, to give the node its duration. */
     private val caseStarts = ConcurrentHashMap<String, Long>()
@@ -146,7 +144,7 @@ class LuaUnitTestConsole(
     @Volatile
     var environment: com.intellij.execution.runners.ExecutionEnvironment? = null
 
-    /** The group nodes (sections, suite files) with their plain label, for the counters. */
+    /** The group nodes (sections, suite tables, suite files) with their plain label, for the counters. */
     private val groupLabels = LinkedHashMap<SMTestProxy, String>()
 
     /** A suite (file) node -> the file's path from the project root, what
@@ -158,10 +156,10 @@ class LuaUnitTestConsole(
         ArrayList<com.intellij.execution.testframework.sm.runner.ui.SMTRunnerTestTreeView>()
 
     /**
-     * The "(3 passed, 1 failed, 2 ignored, 15 running)" of a group. A category
-     * is shown when the tree shows it (the failed and the still running tests
-     * have no filter of their own); a zero block is dropped. A case that has
-     * not finished yet is "running" — it may still turn either way.
+     * The "(3 passed, 1 failed, 2 ignored)" of a group. A category is shown
+     * when the tree shows it (the failed tests have no filter of their own); a
+     * zero block is dropped. A case that has not finished yet is not counted
+     * at all: the group's number moves only with the results.
      */
     private fun countSuffix(node: SMTestProxy): String {
         val showPassed = !com.intellij.execution.testframework.TestConsoleProperties
@@ -171,7 +169,6 @@ class LuaUnitTestConsole(
         var passed = 0
         var failed = 0
         var ignored = 0
-        var running = 0
         fun walk(current: SMTestProxy) {
             for (child in current.children) {
                 if (!child.isLeaf) {
@@ -180,7 +177,6 @@ class LuaUnitTestConsole(
                     child.isIgnored -> ignored++
                     child.isDefect -> failed++
                     finishedCases.contains(child) -> passed++
-                    else -> running++
                 }
             }
         }
@@ -189,7 +185,6 @@ class LuaUnitTestConsole(
         if (showPassed && passed > 0) parts.add("$passed passed")
         if (failed > 0) parts.add("$failed failed")
         if (showIgnored && ignored > 0) parts.add("$ignored ignored")
-        if (running > 0 && !allSuitesDone) parts.add("$running running")
         return "(${parts.joinToString(", ").ifEmpty { "0" }})"
     }
 
@@ -231,9 +226,9 @@ class LuaUnitTestConsole(
     }
 
     /**
-     * Recounts the groups above [node] (its suite and its section): a new
-     * failed or ignored case changes their counters, and the run itself shows
-     * its progress through them.
+     * Recounts the groups above [node] (its suite table, its file and its
+     * section): a new failed or ignored case changes their counters, and the
+     * run itself shows its progress through them.
      */
     private fun refreshCountsUp(node: SMTestProxy?) {
         val chain = ArrayList<SMTestProxy>()
@@ -704,32 +699,46 @@ class LuaUnitTestConsole(
                 // with a ":1" line suffix.
                 suiteNodePaths[suiteNode] = suite.displayName
                 suiteById(suite.displayName)?.proxy = suiteNode
+                // The suite tables of the whole FILE decide whether the cases
+                // are grouped: a run of one table of a two-table file still
+                // shows that table as a group. Only a file with a single table
+                // keeps its cases directly on the file node. The groups follow
+                // the order the tables are declared in the file.
+                val tables = suiteTables(suite)
+                val grouped = tables.size > 1
+                val byOwner = LinkedHashMap<String, MutableList<LuaUnitNode.Case>>()
                 for (case in suite.cases) {
-                    val source = case.source
-                    val locationUrl = when {
-                        source != null -> "file:///" + absolutePathOf(source.file).trimStart('/') + ":${source.line}"
-                        else -> null
+                    byOwner.getOrPut(ownerOf(case.name)) { ArrayList() }.add(case)
+                }
+                // A plain global test belongs to no table: it stays on the file.
+                for (case in byOwner[""].orEmpty()) {
+                    suiteNode.addChild(caseProxyOf(suite, case))
+                }
+                val ordered = tables + byOwner.keys.filter { it.isNotEmpty() && it !in tables }
+                for (owner in ordered) {
+                    val ownerCases = byOwner[owner] ?: continue
+                    val ownerNode: SMTestProxy? = if (grouped) {
+                        SMTestProxy(owner, true, null).also {
+                            it.setLocator(LuaUnitTestLocator())
+                            groupLabels[it] = owner
+                            classProxies.add(it)
+                            // Started right away, like a section: the group
+                            // reports progress instead of a red cross of
+                            // "never finished" while the run goes.
+                            it.setSuiteStarted()
+                        }
+                    } else {
+                        null
                     }
-                    // The proxy is named by the full test name: the SM runner
-                    // matches the CASE events by that name; the short name is
-                    // only what the tree shows.
-                    val caseProxy = SMTestProxy(case.name, false, locationUrl)
-                    // Without a locator the proxy answers "no location" and a
-                    // double-click on the node opens nothing.
-                    caseProxy.setLocator(LuaUnitTestLocator())
-                    caseProxy.setPresentableName(
-                        if (case.description.isBlank()) case.displayName
-                        else "${case.displayName} (${case.description})"
-                    )
-                    LuaUnitCopyTestNameAction.remember(caseProxy, case)
-                    if (case.ignored) {
-                        // A commented-out case: no run. The tree paints it as
-                        // ignored by its state; the name stays the case's own
-                        // ("CCR_HDAS-52 (HDAS-93: disabled)").
-                        caseProxy.setTestIgnored("", "")
+                    // The children go in before their group is added to the
+                    // file: SMTestProxy caches "is this suite empty" on the
+                    // first question (see the section loop below).
+                    for (case in ownerCases) {
+                        (ownerNode ?: suiteNode).addChild(caseProxyOf(suite, case))
                     }
-                    suiteNode.addChild(caseProxy)
-                    caseProxies[key(suite.displayName, case.name)] = caseProxy
+                    if (ownerNode != null) {
+                        suiteNode.addChild(ownerNode)
+                    }
                 }
                 sectionChildren.add(suiteNode)
             }
@@ -776,6 +785,81 @@ class LuaUnitTestConsole(
     }
 
     private fun suiteById(name: String): LuaUnitSuite? = suites.firstOrNull { it.key == name }
+
+    /** The suite table a case is declared on: "ABCGroup" for
+      * "ABCGroup.test_x", an empty string for a plain global test. */
+    private fun ownerOf(caseName: String): String = caseName.substringBeforeLast('.', "")
+
+    /**
+     * The suite tables [suite]'s FILE declares, in the order of their
+     * declarations. The whole file counts, not the run's filtered cases: a run
+     * of one table of a two-table file still shows that table as a group.
+     */
+    private fun suiteTables(suite: LuaUnitSuite): List<String> {
+        val fromCases = discoveredCases(suite)
+            .map { ownerOf(it.name) }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        if (fromCases.size < 2) {
+            return fromCases
+        }
+        val text = LuaUnitTexts.read(suite.file) ?: return fromCases
+        val declared = LuaUnitSuites.declarations(text).filter { it in fromCases }
+        // A table whose declaration is not in the text (built in a loop, or
+        // declared in another file) keeps its case order at the end.
+        return declared + fromCases.filter { it !in declared }
+    }
+
+    /** Every case the discovery found for [suite]'s file, not the run's subset. */
+    private fun discoveredCases(suite: LuaUnitSuite): List<LuaUnitNode.Case> {
+        for (section in tree.sections) {
+            for (known in section.suites) {
+                if (sameFile(known.file, suite.file)) {
+                    return known.cases
+                }
+            }
+        }
+        return suite.cases
+    }
+
+    private fun sameFile(a: java.nio.file.Path, b: java.nio.file.Path): Boolean =
+        try {
+            a.toAbsolutePath().normalize() == b.toAbsolutePath().normalize()
+        } catch (e: Exception) {
+            a == b
+        }
+
+    /**
+     * The tree node of one discovered case: named by the full LuaUnit name (the
+     * SM runner matches the events by it), linked to its declaration, its copy
+     * name and its ignored state.
+     */
+    private fun caseProxyOf(suite: LuaUnitSuite, case: LuaUnitNode.Case): SMTestProxy {
+        val source = case.source
+        val locationUrl = when {
+            source != null -> "file:///" + absolutePathOf(source.file).trimStart('/') + ":${source.line}"
+            else -> null
+        }
+        // The proxy is named by the full test name: the short name is only
+        // what the tree shows.
+        val caseProxy = SMTestProxy(case.name, false, locationUrl)
+        // Without a locator the proxy answers "no location" and a double-click
+        // on the node opens nothing.
+        caseProxy.setLocator(LuaUnitTestLocator())
+        caseProxy.setPresentableName(
+            if (case.description.isBlank()) case.displayName
+            else "${case.displayName} (${case.description})"
+        )
+        LuaUnitCopyTestNameAction.remember(caseProxy, case)
+        if (case.ignored) {
+            // A commented-out case: no run. The tree paints it as ignored by
+            // its state; the name stays the case's own
+            // ("CCR_HDAS-52 (HDAS-93: disabled)").
+            caseProxy.setTestIgnored("", "")
+        }
+        caseProxies[key(suite.displayName, case.name)] = caseProxy
+        return caseProxy
+    }
 
     private fun key(suite: String, case: String) = "$suite\u0000$case"
 
@@ -1173,9 +1257,6 @@ class LuaUnitTestConsole(
         )
         finishedSuites++
         if (finishedSuites >= suites.size) {
-            // Every suite is done: the counters must not claim running cases
-            // anymore — what has not reported its end never will.
-            allSuitesDone = true
             // A case that has not reported by now never will: LuaUnit never ran
             // it (the global _G-style tests and the like). The old runner
             // showed those as "skipped" — mark them not run, so they end up in
@@ -1189,6 +1270,11 @@ class LuaUnitTestConsole(
             // is painted as failed by the platform) and keep the root's name.
             for (section in sectionProxies) {
                 section.setFinished()
+            }
+            // The suite-table groups live inside the file node and have no
+            // event of their own: the end of the run closes them.
+            for (group in classProxies) {
+                group.setFinished()
             }
             // The totals line, the way a JUnit run ends: passed / failed /
             // ignored, each block only when it is not empty.
@@ -1307,7 +1393,15 @@ class LuaUnitTestConsole(
             for (section in tree.sections) {
                 for (suite in section.suites) {
                     val cases = if (singleCase && wanted != null) {
-                        suite.cases.filter { it.name == wanted || it.displayName == wanted }
+                        // A one-case scope names the case itself; a suite scope
+                        // (the gutter icon on `Suite = {}`) names the table its
+                        // cases are declared on, so the prefix keeps them all.
+                        // Both shapes filter the discovered cases — never the
+                        // file's whole list.
+                        suite.cases.filter {
+                            it.name == wanted || it.name.startsWith("$wanted.") ||
+                                it.displayName == wanted
+                        }
                     } else {
                         suite.cases
                     }
