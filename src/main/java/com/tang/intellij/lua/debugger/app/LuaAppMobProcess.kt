@@ -16,6 +16,8 @@
 
 package com.tang.intellij.lua.debugger.app
 
+import com.tang.intellij.lua.debugger.LuaPathLiterals
+
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.process.ProcessEvent
@@ -36,7 +38,8 @@ internal class LuaAppMobProcess(session: XDebugSession) : LuaMobDebugProcess(ses
 
     override fun sessionInitialized() {
         super.sessionInitialized()
-        val setupPackagePath = StringBuilder(String.format("%s/?.lua;", LuaFileUtil.getPluginVirtualFile("debugger/mobdebug")))
+        val roots = ArrayList<String>()
+        LuaFileUtil.getPluginVirtualFile("debugger/mobdebug")?.let { roots.add(it) }
 
         val modules = ModuleManager.getInstance(session.project).modules
         for (module in modules) {
@@ -44,13 +47,15 @@ internal class LuaAppMobProcess(session: XDebugSession) : LuaMobDebugProcess(ses
             for (sourceRoot in sourceRoots) {
                 val path = sourceRoot.canonicalPath
                 if (path != null) {
-                    setupPackagePath.append(path).append("/?.lua;")
+                    roots.add(path)
                 }
             }
         }
 
         val commandLine = GeneralCommandLine(configuration.program)
-        commandLine.addParameters("-e", String.format("package.path = package.path .. ';%s' require('mobdebug').start()", setupPackagePath.toString()))
+        // The path goes into a Lua string: a raw Windows separator would be an
+        // escape sequence there (see LuaPathLiterals).
+        commandLine.addParameters("-e", String.format("package.path = package.path .. ';%s' require('mobdebug').start()", LuaPathLiterals.packagePath(roots)))
         commandLine.addParameters(configuration.file!!)
 
         val dir = configuration.workingDir

@@ -16,6 +16,8 @@
 
 package com.tang.intellij.lua.debugger.luaunit
 
+import com.tang.intellij.lua.debugger.LuaPathLiterals
+
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.tang.intellij.lua.psi.LuaFileUtil
 
@@ -155,11 +157,10 @@ object LuaUnitRunnerScript {
      * test file) runs; the port is the one the debug session listens on.
      */
     fun debugPrelude(port: Int, workingDir: String?): String {
-        val path = StringBuilder()
-        mobdebugDirectory()?.let { path.append(it).append("/?.lua;") }
-        if (workingDir != null) {
-            path.append(workingDir).append("/?.lua;")
-        }
+        // The path goes into a Lua string: a raw Windows separator would be an
+        // escape sequence there and the directory would vanish from
+        // `package.path` (see [LuaPathLiterals]).
+        val path = LuaPathLiterals.packagePath(listOfNotNull(mobdebugDirectory(), workingDir))
         return "package.path = '$path' .. package.path " +
                 "local ok, mob = pcall(require, 'mobdebug') " +
                 "if ok then mob.start('127.0.0.1', $port) else io.stderr:write('[LuaUnit] mobdebug: ' .. tostring(mob) .. '\\n') end"
