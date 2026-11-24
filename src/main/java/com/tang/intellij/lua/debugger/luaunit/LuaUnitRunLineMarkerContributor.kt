@@ -111,6 +111,12 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             return dataEntryInfo(element, manifest, diskPath)
         }
 
+        // The declaration of the suite itself ("TestSuite = {}"): the file
+        // holds the tests of that table, so its line runs the whole file.
+        suiteAt(element, file)?.let { name ->
+            return info("Run $name", element)
+        }
+
         // A case's function: "function T:test_x()" parses as LuaClassMethodDef,
         // not LuaFuncDef. Only the leaf the declaration starts with answers.
         val func: PsiElement? = PsiTreeUtil.getParentOfType(element, LuaClassMethodDef::class.java, false)
@@ -144,6 +150,37 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         }
         return null
     }
+
+    /**
+     * The name of the suite table declared on the element's line
+     * (`TestSuite = {}`, `local TestSuite = {}`), or null. Only the first leaf
+     * of the line answers: the marker must sit once.
+     */
+    private fun suiteAt(element: PsiElement, file: LuaPsiFile): String? {
+        val text = file.text
+        val offset = element.textRange.startOffset
+        if (offset >= text.length) {
+            return null
+        }
+        var lineStart = text.lastIndexOf('\n', (offset - 1).coerceAtLeast(0)) + 1
+        if (lineStart < 0 || lineStart > offset) {
+            lineStart = 0
+        }
+        var first = lineStart
+        while (first < offset && text[first].isWhitespace()) {
+            first++
+        }
+        if (first != offset) {
+            return null
+        }
+        val lineEnd = text.indexOf('\n', offset).let { if (it < 0) text.length else it }
+        val match = SUITE_DECLARATION.matchEntire(text.substring(lineStart, lineEnd).trim()) ?: return null
+        val name = match.groupValues[1]
+        return if (name.contains("Test", ignoreCase = true)) name else null
+    }
+
+    /** `TestSuite = {}` (a plain empty table the tests are put into). */
+    private val SUITE_DECLARATION = Regex("""(?:local\s+)?([A-Za-z_]\w*)\s*=\s*\{\s*}""")
 
     /** True when [element] is the very first leaf of its file. */
     private fun isFirstLeaf(element: PsiElement): Boolean =
