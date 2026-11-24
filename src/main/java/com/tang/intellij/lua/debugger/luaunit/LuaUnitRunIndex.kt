@@ -125,7 +125,7 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
     /** True when the file declares cases of some run (nothing to show otherwise). */
     fun hasResultsFor(file: String): Boolean {
         val path = canonical(file)
-        return state.cases.any { it.testFile == path || it.declarationFile == path }
+        return state.cases.any { it.testFile == path || it.declarationFile == path || it.errorFile == path }
     }
 
     /** The record of one case, or null when it did not run in any known run. */
