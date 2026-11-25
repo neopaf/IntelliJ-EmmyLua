@@ -129,6 +129,14 @@ class LuaUnitOutputConverter(
      */
     private val setupFixtures = LinkedHashMap<String, LinkedHashSet<String>>()
 
+    /**
+     * The files the file itself opened while loading (`currentCase` is null
+     * on the IDE side until the first CASE marker). For a plain script the
+     * load IS the run, and the load belongs to the file's own node: its
+     * fixtures are shown above the first line of the file.
+     */
+    private val loadFixtures = LinkedHashSet<String>()
+
     /** True between the CASE marker and the BODY marker: the setUp is running. */
     private var inSetUp = false
 
@@ -175,6 +183,10 @@ class LuaUnitOutputConverter(
                     } else {
                         pendingFixtures.add(event.file)
                     }
+                } else {
+                    // Before the first CASE (or in a plain-script file that
+                    // never reports one): the file read this while loading.
+                    loadFixtures.add(event.file)
                 }
             }
             is LuaUnitProtocol.Event.CaseFailed -> {
@@ -269,6 +281,11 @@ class LuaUnitOutputConverter(
         for ((className, files) in setupFixtures) {
             console.onSetUpFixtures(suite, className, ArrayList(files))
         }
+        // The files the load opened — a plain script's own fixtures — and the
+        // fact that a file without any case finished. A file that declares no
+        // case reports no case-level event either, so without this record it
+        // had neither fixtures nor a result to colour it by.
+        console.onFileFinished(suite, ArrayList(loadFixtures), sawDone)
         console.onSuiteFinished(suite)
         if (exitCode != 0 && suite.cases.isEmpty()) {
             console.onOutput(suite, null, "The Lua process exited with code $exitCode\n", true)

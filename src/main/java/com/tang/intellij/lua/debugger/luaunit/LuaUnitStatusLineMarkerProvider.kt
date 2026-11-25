@@ -72,7 +72,7 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         if (offset == first) {
             val declared = index.casesDeclaredIn(path)
                 .filter {
-                    !it.setup && it.declarationLine == line &&
+                    !it.setup && !it.fileLevel && it.declarationLine == line &&
                         LuaUnitCaseLines.declares(document, line, it)
                 }
             if (declared.isNotEmpty()) {

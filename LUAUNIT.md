@@ -67,6 +67,23 @@ Rules the discovery follows:
 - the tree node of a generated case points at the row's `id = "..."` line, so
   a double-click opens the data, not the loop.
 
+## Files without cases
+
+A file listed in the manifest may declare no test function at all: it is a
+plain script, and loading it *is* the run. Such a file keeps its node in the
+tree — the same file node a suite gets:
+
+- a double-click on the node opens the file at its **first line** (a node
+  whose file has cases toggles instead, as before);
+- a failure of the load (a missing module, a syntax error, an assertion in
+  the script) is shown on the file's node and as a failure inlay on the right
+  of the first line — the same `-- ❌ ...` hint a case gets, with the diff when
+  the failure carried expected/actual values;
+- the files the script opened while loading are its fixtures: they are shown
+  in a block above the first line of the file;
+- the file is tinted in the project view by the result of its load — green
+  when the script finished, red when it failed.
+
 ## Ignoring a case
 
 Comment the case out — it stays in the tree as **ignored** and never runs.

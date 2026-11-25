@@ -177,16 +177,20 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
                 if (case.fixtures.isEmpty()) {
                     continue
                 }
-                if (case.declarationLine < 1 || case.declarationLine > editor.document.lineCount) {
+                // The record of the file itself (a plain script) has no
+                // declaration: its fixtures are shown above the first line.
+                val line = if (case.fileLevel) 1 else case.declarationLine
+                if (line < 1 || line > editor.document.lineCount) {
                     continue
                 }
                 // The file may have changed since the run: a record whose
                 // line no longer declares the case would put the fixtures of
-                // a dead case into the body of a live one.
-                if (!LuaUnitCaseLines.declares(editor.document, case.declarationLine, case)) {
+                // a dead case into the body of a live one. A file-level record
+                // has no declaration to check.
+                if (!case.fileLevel && !LuaUnitCaseLines.declares(editor.document, line, case)) {
                     continue
                 }
-                byLine.getOrPut(case.declarationLine) { ArrayList() }.add(case)
+                byLine.getOrPut(line) { ArrayList() }.add(case)
             }
             if (byLine.isEmpty()) {
                 return

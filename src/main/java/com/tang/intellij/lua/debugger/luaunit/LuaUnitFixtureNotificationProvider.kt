@@ -166,6 +166,11 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
 
     /** True when the case is still declared where the run saw it. */
     private fun alive(test: LuaUnitRunIndex.CaseResult): Boolean {
+        // A file-level record has no declaration: it is alive as long as its
+        // file exists.
+        if (test.fileLevel) {
+            return true
+        }
         val path = test.declarationFile.ifEmpty { test.testFile }
         val file = LocalFileSystem.getInstance().findFileByPath(path) ?: return false
         val document = FileDocumentManager.getInstance().getDocument(file) ?: return true
