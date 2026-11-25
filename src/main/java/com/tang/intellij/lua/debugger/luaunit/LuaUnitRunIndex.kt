@@ -114,7 +114,24 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
     override fun getState(): State = state
 
     override fun loadState(state: State) {
-        this.state = state
+        // The record of a whole file used to be named with a NUL-prefixed
+        // string the platform's serialiser drops: the stored copy came back as
+        // the bare "file", the next run added a record under the real key, and
+        // a plain script's failure was shown twice. Put every stored copy on
+        // the current name and keep one record per key.
+        for (case in state.cases) {
+            if (case.fileLevel && case.caseName != FILE_RECORD) {
+                case.caseName = FILE_RECORD
+            }
+        }
+        val merged = LinkedHashMap<String, CaseResult>()
+        for (case in state.cases) {
+            merged[case.key()] = case
+        }
+        this.state = State().also {
+            it.cases = ArrayList(merged.values)
+            it.lastRun = state.lastRun
+        }
         directoryCache = null
     }
 
@@ -131,6 +148,14 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
             merged[case.key()] = case
         }
         for (case in results) {
+            if (case.fileLevel) {
+                // A file has one record: a copy stored under a retired name
+                // (the old NUL-prefixed one) must not survive the publish and
+                // show the same failure twice.
+                merged.values.removeIf {
+                    it.fileLevel && it.testFile == case.testFile && it.key() != case.key()
+                }
+            }
             merged[case.key()] = case
         }
         state.cases = ArrayList(merged.values)
@@ -282,7 +307,13 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
          * script, a file that failed to load). No LuaUnit case can carry it:
          * a real name never contains a NUL.
          */
-        const val FILE_RECORD: String = "\u0000file"
+        /**
+         * The name of the record that stands for a whole file. It must not
+         * carry control characters: the platform's serialiser drops them, and
+         * the stored copy then comes back under a different key — which made
+         * the next run add a second record for the same file.
+         */
+        const val FILE_RECORD: String = "file"
 
         fun getInstance(project: Project): LuaUnitRunIndex =
             project.getService(LuaUnitRunIndex::class.java)
