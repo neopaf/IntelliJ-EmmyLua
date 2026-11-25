@@ -86,4 +86,9 @@ public class LuaMobStackFrame extends XStackFrame {
     {
         return this.stackLevel;
     }
+
+    public String getFunctionName()
+    {
+        return this.functionName;
+    }
 }
