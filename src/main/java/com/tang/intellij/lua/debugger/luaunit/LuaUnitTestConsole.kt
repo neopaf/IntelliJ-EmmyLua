@@ -956,7 +956,7 @@ class LuaUnitTestConsole(
      * to the console.
      */
     fun onSuiteFailure(suite: LuaUnitSuite, failure: LuaUnitProtocol.Failure) = synchronized(lock) {
-        nowOrDefer { onSuiteFailureNow(suite, failure) }
+        nowOrDefer { onSuiteFailureNow(suite, normalizeFailure(failure)) }
     }
 
     private fun onSuiteFailureNow(suite: LuaUnitSuite, failure: LuaUnitProtocol.Failure) {
@@ -996,7 +996,7 @@ class LuaUnitTestConsole(
         failure: LuaUnitProtocol.Failure?,
         fixtures: List<String> = emptyList()
     ) = synchronized(lock) {
-        nowOrDefer { onCaseFinishedNow(suite, name, failure, fixtures) }
+        nowOrDefer { onCaseFinishedNow(suite, name, failure?.let { normalizeFailure(it) }, fixtures) }
     }
 
     private fun onCaseFinishedNow(
@@ -1356,6 +1356,24 @@ class LuaUnitTestConsole(
     }
 
     /**
+     * A failure with the paths of its message and trace in the project-relative
+     * form. The message of a failing `error()` names the chunk it was raised in,
+     * and under the debugger Lua trims that absolute name to "..." plus its tail
+     * (see [LuaUnitPaths]); the frames of the trace keep the same names. Both
+     * the text of the node and the record of the run index get the normalized
+     * form, so a click and an inlay resolve the file.
+     */
+    private fun normalizeFailure(failure: LuaUnitProtocol.Failure): LuaUnitProtocol.Failure {
+        val project = configuration.project
+        val message = LuaUnitPaths.normalize(project, failure.message)
+        val trace = failure.trace?.let { LuaUnitPaths.normalize(project, it) }
+        if (message == failure.message && trace == failure.trace) {
+            return failure
+        }
+        return failure.copy(message = message, trace = trace)
+    }
+
+    /**
      * The `file:line` of a failure trace that resolves to a real file. A test
      * often calls a helper of its own (`assertMetrics`); the failure happened
      * in that helper, but the line the user wants to see is the call of the
@@ -1405,25 +1423,37 @@ class LuaUnitTestConsole(
 
 
     fun onOutput(suite: LuaUnitSuite, caseName: String?, text: String, error: Boolean) {
+        // The debugger loads a suite by its absolute path, and Lua trims a
+        // long chunk name of a traceback to "..." plus its tail. The console
+        // shows the same project-relative paths a run prints — see
+        // [LuaUnitPaths] — so both executors read the same and the hyperlink
+        // filter resolves every frame.
+        val shown = LuaUnitPaths.normalize(configuration.project, text)
         val suiteKey = suite.key
         synchronized(lock) {
-            nowOrDefer { appendOutputNow(suiteKey, caseName, text, error) }
+            nowOrDefer { appendOutputNow(suiteKey, caseName, shown, error) }
         }
         if (debug) {
-            // The Java way: the Console tab of the debug session shows the
-            // tests' own stdout/stderr, not only the debugger chatter. The
-            // tests tree keeps its copy too (a node's own output).
+            // A debug session's Console tab is the tests tree itself
+            // ([LuaUnitDebugger.offerConsole]), so the node of the event above
+            // already prints the text there: printing it into the session's
+            // console as well showed every line twice. Only a session with a
+            // console of its own (the bare mobdebug one) needs the copy.
             val session = com.intellij.xdebugger.XDebuggerManager
                 .getInstance(configuration.project).currentSession
-            session?.consoleView?.print(
-                text,
-                if (error) ConsoleViewContentType.ERROR_OUTPUT else ConsoleViewContentType.NORMAL_OUTPUT
-            )
+            val target = session?.consoleView
+            if (target != null && target !== consoleView) {
+                target.print(
+                    shown,
+                    if (error) ConsoleViewContentType.ERROR_OUTPUT else ConsoleViewContentType.NORMAL_OUTPUT
+                )
+            }
         }
     }
 
-    /** The node-taking half of [onOutput]; during the replay the debug
-      * session already printed the text when the event arrived. */
+    /** The node-taking half of [onOutput]: the text belongs to the node of its
+      * case (or of its file), and the console of the tree prints it when that
+      * node is shown. */
     private fun appendOutputNow(suiteKey: String, caseName: String?, text: String, error: Boolean) {
         val node = if (caseName != null) caseProxies[key(suiteKey, caseName)] else suiteById(suiteKey)?.proxy
         if (node != null) {
