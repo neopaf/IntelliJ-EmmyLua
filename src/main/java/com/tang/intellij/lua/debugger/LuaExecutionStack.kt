@@ -24,7 +24,8 @@ import com.intellij.xdebugger.impl.frame.XStackFrameContainerEx
  *
  * Created by tangzx on 2016/12/31.
  */
-class LuaExecutionStack(private val stackFrameList: List<XStackFrame>) : XExecutionStack("LuaStack") {
+class LuaExecutionStack(frames: List<XStackFrame>) : XExecutionStack("LuaStack") {
+    private val stackFrameList: List<XStackFrame> = LuaStackFrameFilter.filter(frames)
     private var _topFrame: XStackFrame? = null
 
     val stackFrames: Array<XStackFrame>
@@ -38,7 +39,9 @@ class LuaExecutionStack(private val stackFrameList: List<XStackFrame>) : XExecut
     override fun getTopFrame() = _topFrame
 
     fun setTopFrame(frame: XStackFrame) {
-        _topFrame = frame
+        // The requested frame may have been hidden as a service one, and a frame
+        // outside the shown list would leave the panel without a selection.
+        _topFrame = if (stackFrameList.contains(frame)) frame else (stackFrameList.firstOrNull() ?: frame)
     }
 
     override fun computeStackFrames(i: Int, xStackFrameContainer: XExecutionStack.XStackFrameContainer) {
