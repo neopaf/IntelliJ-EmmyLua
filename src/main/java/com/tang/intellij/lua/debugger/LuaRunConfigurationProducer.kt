@@ -60,18 +60,29 @@ class LuaRunConfigurationProducer : LazyRunConfigurationProducer<LuaAppRunConfig
         luaAppRunConfiguration.file = LuaFileUtil.getShortPath(element.project, containingFile.virtualFile)
         luaAppRunConfiguration.name = containingFile.name
 
-        val dir = containingFile.parent?.virtualFile
-        val module = configurationContext.module
-        if (dir != null && module != null) {
-            val rootManager = LuaSourceRootManager.getInstance(element.project)
+        luaAppRunConfiguration.workingDir = workingDirectoryOf(element.project, containingFile)
+        return true
+    }
+
+    /**
+     * The directory the new configuration runs from: the closest Lua source
+     * root of the file, otherwise the project root.
+     *
+     * <p>A project without Lua source roots (a plain `lua main.lua` run) would
+     * otherwise get a configuration with an empty working directory, and the
+     * run would resolve `require`s against the IDE's own directory.
+     */
+    private fun workingDirectoryOf(project: com.intellij.openapi.project.Project, file: LuaPsiFile): String? {
+        val dir = file.parent?.virtualFile
+        if (dir != null) {
+            val rootManager = LuaSourceRootManager.getInstance(project)
             for (root in rootManager.getSourceRoots()) {
                 if (root.url.startsWith(dir.url)) {
-                    luaAppRunConfiguration.workingDir = root.canonicalPath
-                    break
+                    return root.canonicalPath
                 }
             }
         }
-        return true
+        return project.basePath
     }
 
     override fun isConfigurationFromContext(luaAppRunConfiguration: LuaAppRunConfiguration, configurationContext: ConfigurationContext): Boolean {

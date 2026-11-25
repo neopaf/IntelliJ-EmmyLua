@@ -146,7 +146,10 @@ class LuaAppRunConfiguration(project: Project, factory: ConfigurationFactory)
                     }
                 }
             }
-            return null
+            // No source root at all (a plain Lua project): the project root is
+            // the only sensible working directory, and without it the field
+            // stays empty and the run resolves requires from the IDE directory.
+            return project.basePath
         }
 
     override fun checkConfiguration() {
