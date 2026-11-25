@@ -299,6 +299,30 @@ class LuaUnitTestConsole(
         findTestTrees(consoleView.component, testTrees)
         com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
             .info("copy handler installed on ${testTrees.size} test tree(s)")
+        // The "Copy Test Name" action as a component binding. The registered
+        // action must keep its shortcut set for KeymapManager alone — changing
+        // it fires the "ShortcutSet of global AnActions" warning. A separate,
+        // never-registered instance of the same class is not global, so its
+        // shortcut set is the per-component binding this code needs.
+        val copyAction = LuaUnitCopyTestNameAction()
+        // The keys are the active keymap's own for $Copy (Cmd+C on macOS,
+        // Ctrl+C elsewhere): a user's remapping of Copy is honoured, and the
+        // tree stays the one place where the binding wins over the global
+        // action. A keymap with no Copy shortcut at all falls back to the
+        // platform's native key, so the tree keeps its key either way.
+        val copyShortcuts = com.intellij.openapi.keymap.KeymapUtil.getActiveKeymapShortcuts(
+            com.intellij.openapi.actionSystem.IdeActions.ACTION_COPY
+        )
+        val copyKeys = if (copyShortcuts.shortcuts.isNotEmpty()) copyShortcuts else
+            com.intellij.openapi.actionSystem.CustomShortcutSet(
+                com.intellij.openapi.actionSystem.KeyboardShortcut(
+                    javax.swing.KeyStroke.getKeyStroke(
+                        java.awt.event.KeyEvent.VK_C,
+                        java.awt.Toolkit.getDefaultToolkit().menuShortcutKeyMask
+                    ),
+                    null
+                )
+            )
         for (tree in testTrees) {
             tree.transferHandler = object : javax.swing.TransferHandler() {
                 override fun createTransferable(component: javax.swing.JComponent): java.awt.datatransfer.Transferable? {
@@ -315,35 +339,26 @@ class LuaUnitTestConsole(
 
                 override fun getSourceActions(component: javax.swing.JComponent): Int = COPY
             }
-            // The copy action gets the platform's native shortcut (Cmd+C on
-            // macOS, Ctrl+C elsewhere) RIGHT ON THE TREE: a shortcut
-            // registered on the component wins over the global $Copy while
-            // the tree has the focus, and the menu shows it by the item.
-            val copyAction = com.intellij.openapi.actionSystem.ActionManager.getInstance()
-                .getAction("LuaUnit.CopyTestName")
-            if (copyAction != null) {
-                val mask = java.awt.Toolkit.getDefaultToolkit().menuShortcutKeyMask
-                copyAction.registerCustomShortcutSet(
-                    com.intellij.openapi.actionSystem.CustomShortcutSet(
-                        com.intellij.openapi.actionSystem.KeyboardShortcut(
-                            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C, mask), null
-                        )
-                    ),
-                    tree
-                )
-            }
+            // The copy action gets the active keymap's Copy shortcut
+            // RIGHT ON THE TREE: a shortcut registered on the component
+            // wins over the global $Copy while the tree has the focus. The
+            // menu item stays the registered action, so it no longer prints
+            // the key next to itself — the binding is local by design.
+            copyAction.registerCustomShortcutSet(copyKeys, tree)
         }
         return consoleView
     }
 
     /**
-     * What Cmd+C copies: a suite (file) node copies the file's path from the
-     * project root, as a failure message names it and with no line suffix;
-     * a case keeps everything it shows (its description included), with no
-     * "test_" prefix — the shown name is already without one; a group's name
-     * carries the live "(N passed, ...)" counter — it is dropped.
+     * What a copy of a tree node puts on the clipboard: a case copies its
+     * copyable name (the declared one, or the data row's — never the
+     * description the tree shows in parentheses); a suite (file) node copies
+     * the file's path from the project root, as a failure message names it
+     * and with no line suffix; a group's name carries the live
+     * "(N passed, ...)" counter — it is dropped.
      */
     private fun copyableName(proxy: SMTestProxy): String {
+        LuaUnitCopyTestNameAction.savedName(proxy)?.let { return it }
         suiteNodePaths[proxy]?.let { return it }
         val shown = proxy.presentableName ?: proxy.name ?: return ""
         return if (proxy.isLeaf) shown else shown.replace(Regex("""\s+\([^)]*\)$"""), "")
