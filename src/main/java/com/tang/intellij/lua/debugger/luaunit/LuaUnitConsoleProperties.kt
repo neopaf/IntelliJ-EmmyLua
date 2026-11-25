@@ -199,6 +199,12 @@ class LuaUnitTestLocator : SMTestLocator {
         val cleaned = path.trim().removePrefix("at ").trim()
             .removePrefix("fixture(").removeSuffix(")")
             .substringBefore('(')
+        // A "..."-truncated chunk name of a debugger trace (Lua trims a long
+        // name to its tail): the project base is what the truncation cut away,
+        // and [LuaUnitPaths] recovers the file from the tail.
+        if (cleaned.startsWith("...")) {
+            LuaUnitPaths.findFile(project, cleaned)?.let { return it }
+        }
         // An absolute path (what the tree node carries) is resolved directly;
         // the project-relative lookup is kept for trace frames.
         val absolute = java.io.File(cleaned)
