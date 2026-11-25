@@ -371,13 +371,51 @@ local function requireHook(name, ...)
 end
 require = requireHook
 
+-- The traceback of a file that does not load. The message of the failing
+-- assertion (with the EXPECTED/ACTUAL blocks of the diff module) comes before
+-- the frames, and the IDE prints the message on its own: only the traceback is
+-- kept. Unlike a case, the throwing frame here is the `main chunk` of the file
+-- itself — it is the only user frame and must stay.
+local function loadFailureTrace(text)
+    if text == nil then
+        return nil
+    end
+    local at = text:find('stack traceback:', 1, true)
+    if at == nil then
+        return nil
+    end
+    local kept = {}
+    for line in (text:sub(at) .. '\n'):gmatch('(.-)\n') do
+        local stripped = line:gsub('^%s+', '')
+        local framework = stripped:find('emmylua_luaunit%.lua:', 1) ~= nil
+            or stripped:find('emmylua_diff%.lua:', 1) ~= nil
+            or stripped:find('/luaunit%.lua:', 1) ~= nil
+            or stripped:find('^%[C%]:', 1) ~= nil
+        if line:find('^stack traceback:', 1) then
+            kept[#kept + 1] = line
+        elseif line:find('^%s+%S', 1) and not framework then
+            kept[#kept + 1] = line
+        end
+    end
+    if #kept <= 1 then
+        return nil
+    end
+    return table.concat(kept, '\n')
+end
+
 currentCase = testFile
+-- The traceback of the load: a plain script runs entirely on load, so this is
+-- the only place the line that threw is named. A case has its own traceback
+-- (see recordFailure); a file that does not load would otherwise show just
+-- the message, with no frame of the file.
+local loadTrace = nil
 local okLoad, loadErr = xpcall(function()
     assert(loadfile(testFile))()
 end, function(err)
     if type(err) == 'table' and err.marker == 'os.exit' then
         return err
     end
+    loadTrace = debug.traceback(tostring(err), 2)
     return err
 end)
 require = realRequire
@@ -389,7 +427,8 @@ if type(loadErr) == 'table' and loadErr.marker == 'os.exit' then
 elseif not okLoad then
     local message, expected, actual = diff.extract(tostring(loadErr))
     emitMark('FAIL', '{"name": ' .. quote(testFile) .. ', "status": "ERROR", "message": ' .. quote(message)
-        .. ', "expected": ' .. nilable(expected) .. ', "actual": ' .. nilable(actual) .. '}')
+        .. ', "expected": ' .. nilable(expected) .. ', "actual": ' .. nilable(actual)
+        .. ', "trace": ' .. nilable(loadFailureTrace(loadTrace)) .. '}')
     emitMark('DONE', '{"name": ' .. quote(testFile) .. ', "cases": [' .. quote(testFile) .. '], "failed": 1}')
     os.exit(1)
 end

@@ -1262,9 +1262,15 @@ class LuaUnitTestConsole(
         result.message = limit(failure.message)
         result.expected = failure.expected?.let { limit(it) }
         result.actual = failure.actual?.let { limit(it) }
-        result.errorFile = result.declarationFile
-        result.errorLine = 1
-        result.errorText = lineTextOf(result.declarationFile, 1)
+        // The traceback names the line of the file that threw (a plain script
+        // runs on load, so there is no case to carry the place). The first
+        // line is the fallback: a failure without a trace names no better
+        // place than the start of the file.
+        val site = failureSite(failure, result.declarationFile)
+            ?: (result.declarationFile to 1)
+        result.errorFile = site.first
+        result.errorLine = site.second
+        result.errorText = lineTextOf(site.first, site.second)
     }
 
     /**

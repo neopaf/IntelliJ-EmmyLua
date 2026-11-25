@@ -413,9 +413,18 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
             failure: LuaUnitRunIndex.CaseResult
         ): Int {
             // A failure of the file itself (a load error, a plain script that
-            // threw) has no declaration to point at: the first line of the
-            // file is the place it belongs to.
+            // threw) has no declaration to point at: the traceback names the
+            // line that threw, and the mark goes there. Without a trace the
+            // first line of the file is the place it belongs to.
             if (failure.fileLevel) {
+                if (failure.errorFile == failure.declarationFile &&
+                    failure.errorLine in 2..document.lineCount
+                ) {
+                    val line = alignedLine(document, failure.errorLine, failure.errorText)
+                    if (line > 0) {
+                        return line
+                    }
+                }
                 return if (document.lineCount >= 1) 1 else 0
             }
             if (failure.declarationLine < 1 || failure.declarationLine > document.lineCount) {
