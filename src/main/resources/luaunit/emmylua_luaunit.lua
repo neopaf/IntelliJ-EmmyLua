@@ -8,6 +8,7 @@
 -- own line; the IDE splits stdout by them:
 --
 --   @@EMLUA_LUAUNIT_CASE@@      <case name>    a case is about to run
+--   @@EMLUA_LUAUNIT_BODY@@      <class>        setUp is over: the case's own body starts
 --   @@EMLUA_LUAUNIT_FAIL@@      <json>         the current case failed
 --   @@EMLUA_LUAUNIT_DONE@@      <json>         suite summary
 --   @@EMLUA_LUAUNIT_FILE@@      <path>:<line>  fixture opened for reading
@@ -696,10 +697,19 @@ local okRun, runErr = xpcall(function()
         local methodName = caseName:match('^[^%.]+%.(.+)$')
         local instance = byClass[className]
         startCase(caseName)
+        -- The body marker: everything the CASE opened before it was read by
+        -- the case's setUp (LuaUnit calls it inside execOneFunction), and the
+        -- IDE shows those files above the setUp method, not above the case.
+        local function body(fn)
+            return function(...)
+                emitMark('BODY', className or '')
+                return fn(...)
+            end
+        end
         if methodName == nil then
-            runner:execOneFunction(nil, caseName, nil, traced(instance))
+            runner:execOneFunction(nil, caseName, nil, body(traced(instance)))
         else
-            runner:execOneFunction(className, methodName, instance, traced(instance[methodName]))
+            runner:execOneFunction(className, methodName, instance, body(traced(instance[methodName])))
         end
         if runner.result.aborted then
             break

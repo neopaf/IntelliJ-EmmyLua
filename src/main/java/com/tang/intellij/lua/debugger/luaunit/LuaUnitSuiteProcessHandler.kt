@@ -121,6 +121,20 @@ class LuaUnitOutputConverter(
      */
     private val pendingFixtures = ArrayList<String>()
 
+    /**
+     * The files a case's setUp opened, by the suite table whose setUp it is.
+     * The setUp of a table runs once per case, before the body: what it reads
+     * is the table's setup, not the case's own input, and the IDE shows it
+     * above `function Suite:setUp()` — the case block stays about the case.
+     */
+    private val setupFixtures = LinkedHashMap<String, LinkedHashSet<String>>()
+
+    /** True between the CASE marker and the BODY marker: the setUp is running. */
+    private var inSetUp = false
+
+    /** The suite table of the running case (`TestSuite` of `TestSuite.test_x`). */
+    private var currentClass = ""
+
     private var finished = false
 
     /** True once a case-level failure record arrived: the suite's own "N
@@ -144,11 +158,23 @@ class LuaUnitOutputConverter(
             is LuaUnitProtocol.Event.CaseStarted -> {
                 closeCase()
                 currentCase = event.name
+                currentClass = event.name.substringBefore('.', "")
+                inSetUp = true
                 console.onCaseStarted(suite, event.name)
+            }
+            is LuaUnitProtocol.Event.BodyStarted -> {
+                inSetUp = false
+                if (event.className.isNotEmpty()) {
+                    currentClass = event.className
+                }
             }
             is LuaUnitProtocol.Event.Fixture -> {
                 if (currentCase != null) {
-                    pendingFixtures.add(event.file)
+                    if (inSetUp) {
+                        setupFixtures.getOrPut(currentClass) { LinkedHashSet() }.add(event.file)
+                    } else {
+                        pendingFixtures.add(event.file)
+                    }
                 }
             }
             is LuaUnitProtocol.Event.CaseFailed -> {
@@ -196,13 +222,21 @@ class LuaUnitOutputConverter(
         if (skip != null) {
             console.onCaseSkipped(suite, name, skip)
         } else {
-            console.onCaseFinished(suite, name, pendingFailure, ArrayList(pendingFixtures))
+            console.onCaseFinished(suite, name, pendingFailure, fixturesOf())
         }
         currentCase = null
         pendingFailure = null
         pendingSkip = null
         pendingFixtures.clear()
     }
+
+    /**
+     * The files the case depends on: what its body opened. What its setUp read
+     * belongs to the table's setUp and is reported on its own — the case block
+     * has to answer "what does this case read", not "what did the setup of the
+     * whole table warm up before it".
+     */
+    private fun fixturesOf(): List<String> = ArrayList(pendingFixtures)
 
     fun finish(exitCode: Int) {
         if (finished) {
@@ -220,7 +254,7 @@ class LuaUnitOutputConverter(
                 open, true,
                 "The Lua process exited (code $exitCode) before the case finished", null, null, null
             )
-            console.onCaseFinished(suite, open, abrupt, ArrayList(pendingFixtures))
+            console.onCaseFinished(suite, open, abrupt, fixturesOf())
             currentCase = null
             pendingFailure = null
             pendingSkip = null
@@ -230,6 +264,11 @@ class LuaUnitOutputConverter(
             "suite finished: file=${suite.key} exit=$exitCode done=$sawDone " +
                 "openCase=${open != null} caseFailures=$sawCaseFailure"
         )
+        // What the tables' setUp read goes to its own records: the block above
+        // `function Suite:setUp()`, and the links of the fixtures it opened.
+        for ((className, files) in setupFixtures) {
+            console.onSetUpFixtures(suite, className, ArrayList(files))
+        }
         console.onSuiteFinished(suite)
         if (exitCode != 0 && suite.cases.isEmpty()) {
             console.onOutput(suite, null, "The Lua process exited with code $exitCode\n", true)

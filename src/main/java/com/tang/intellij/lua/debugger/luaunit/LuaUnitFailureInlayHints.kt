@@ -434,10 +434,49 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
                 failure.errorLine != failure.declarationLine &&
                 failure.errorLine <= document.lineCount
             ) {
-                failure.errorLine
+                alignedLine(document, failure.errorLine, failure.errorText)
             } else {
                 failure.declarationLine
             }
+        }
+
+        /**
+         * The line the stored [text] is on, near the stored [line]: an edit
+         * above moves the text, not the number. 0 when the text is nowhere
+         * around — a rewritten case has no assertion to point at any more.
+         */
+        private fun alignedLine(
+            document: com.intellij.openapi.editor.Document,
+            line: Int,
+            text: String
+        ): Int {
+            if (text.isEmpty()) {
+                return line
+            }
+            if (lineText(document, line) == text) {
+                return line
+            }
+            for (delta in 1..ALIGN_RANGE) {
+                for (candidate in intArrayOf(line - delta, line + delta)) {
+                    if (candidate in 1..document.lineCount && lineText(document, candidate) == text) {
+                        return candidate
+                    }
+                }
+            }
+            return 0
+        }
+
+        /** The text of [line] (1-based), trimmed. */
+        private fun lineText(document: com.intellij.openapi.editor.Document, line: Int): String {
+            if (line < 1 || line > document.lineCount) {
+                return ""
+            }
+            return document.getText(
+                com.intellij.openapi.util.TextRange(
+                    document.getLineStartOffset(line - 1),
+                    document.getLineEndOffset(line - 1)
+                )
+            ).trim()
         }
 
         /** True when the case is declared by an `id` row of a data module. */
@@ -448,6 +487,9 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
         ): Boolean =
             failure.declarationLine in 1..document.lineCount &&
                 LuaUnitDataRows.idField(file, document, failure.declarationLine) != null
+
+        /** How far from the stored line the assertion text is looked for. */
+        private const val ALIGN_RANGE = 40
 
         /** The leaves the Lua grammar marks a comment with. */
         private val COMMENTS = com.intellij.psi.tree.TokenSet.create(

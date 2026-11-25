@@ -65,11 +65,23 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
          * circle. The gutter and the inlay must repeat that icon exactly.
          */
         var comparison: Boolean = false
+        /**
+         * The record stands for a table's `setUp`, not for a case: its
+         * fixtures are shown above the method, and no gutter mark of a test
+         * result belongs on it.
+         */
+        var setup: Boolean = false
         var fixtures: MutableList<String> = ArrayList()
 
         /** Where the run failed: the assertion line of the trace and its message. */
         var errorFile: String = ""
         var errorLine: Int = 0
+        /**
+         * The text of the assertion line, trimmed. A line number goes stale on
+         * the first edit above it; the hint of the failure follows the text, so
+         * an `Enter` above an `error()` does not move the mark to another line.
+         */
+        var errorText: String = ""
         var message: String = ""
         var expected: String? = null
         var actual: String? = null

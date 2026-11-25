@@ -18,6 +18,7 @@ package com.tang.intellij.lua.debugger.luaunit
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.fileEditor.FileEditor
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -57,6 +58,10 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
             return null
         }
         val tests = LuaUnitRunIndex.getInstance(project).testsUsing(file.path)
+            // The file may have changed since the run: a case that is no
+            // longer declared where the run saw it is stale, and its link
+            // would take the reader into the middle of another case.
+            .filter { alive(it) }
         if (tests.isEmpty()) {
             return null
         }
@@ -77,7 +82,15 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
     }
 
     private fun linksPane(project: Project, tests: List<LuaUnitRunIndex.CaseResult>): JComponent {
-        val ordered = tests.sortedWith(compareBy({ it.displayName.lowercase() }, { it.testFile }))
+        // The cases follow the order they are declared in the files, the way
+        // the tree shows them: a suite's own order, not the alphabet.
+        val ordered = tests.sortedWith(
+            compareBy(
+                { it.declarationFile },
+                { it.declarationLine },
+                { it.caseName }
+            )
+        )
         val shown = ordered.take(MAX_SHOWN)
         val rest = ordered.drop(MAX_SHOWN)
         val html = StringBuilder("<html><body style='margin:0'>")
@@ -122,14 +135,37 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
         return pane
     }
 
-    /** The name to show: the file name tells apart two cases of the same name. */
+    /**
+     * The name to show: the shortest one that still names one case.
+     *
+     * <p>A case of its own is shown by its name (`test_x`). A name two cases
+     * share is widened by the part that tells them apart — the suite when both
+     * live in one file (`TestSuite:test_x`), the file when the suites do not
+     * help (`test_x (suite.lua)`), and both parts when neither alone is
+     * enough (`TestSuite:test_x (suite.lua)`).
+     */
     private fun label(all: List<LuaUnitRunIndex.CaseResult>, test: LuaUnitRunIndex.CaseResult): String {
-        val duplicates = all.groupingBy { it.displayName }.eachCount().filterValues { it > 1 }.keys
-        return if (test.displayName in duplicates) {
-            java.io.File(test.testFile).name + ": " + test.displayName
-        } else {
-            test.displayName
+        if (all.count { it.displayName == test.displayName } <= 1) {
+            return test.displayName
         }
+        val suite = test.caseName.substringBeforeLast('.', "")
+        val suiteLabel = if (suite.isEmpty()) test.displayName else "$suite:${test.displayName}"
+        if (all.count { it.caseName == test.caseName } <= 1) {
+            return suiteLabel
+        }
+        val file = java.io.File(test.testFile).name
+        if (all.count { it.displayName == test.displayName && it.testFile == test.testFile } <= 1) {
+            return "${test.displayName} ($file)"
+        }
+        return "$suiteLabel ($file)"
+    }
+
+    /** True when the case is still declared where the run saw it. */
+    private fun alive(test: LuaUnitRunIndex.CaseResult): Boolean {
+        val path = test.declarationFile.ifEmpty { test.testFile }
+        val file = LocalFileSystem.getInstance().findFileByPath(path) ?: return false
+        val document = FileDocumentManager.getInstance().getDocument(file) ?: return true
+        return LuaUnitCaseLines.declares(document, test.declarationLine, test)
     }
 
     private fun escape(text: String): String =

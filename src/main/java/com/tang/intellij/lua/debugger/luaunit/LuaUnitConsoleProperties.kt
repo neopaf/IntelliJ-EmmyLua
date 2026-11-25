@@ -59,8 +59,8 @@ class LuaUnitConsoleProperties(
         setIfUndefined(com.intellij.execution.testframework.TestConsoleProperties.SHOW_STATISTICS, true)
         setIfUndefined(com.intellij.execution.testframework.TestConsoleProperties.SHOW_INLINE_STATISTICS, true)
         // The platform hides the passed tests by default: a LuaUnit run would
-        // open to bare groups with "(0)" counters and look broken. The filter
-        // stays in the toolbar — a user who wants the failures only can flip it.
+        // open with the groups stripped of their cases. The filter stays in
+        // the toolbar — a user who wants the failures only can flip it.
         setIfUndefined(com.intellij.execution.testframework.TestConsoleProperties.HIDE_PASSED_TESTS, false)
     }
 
