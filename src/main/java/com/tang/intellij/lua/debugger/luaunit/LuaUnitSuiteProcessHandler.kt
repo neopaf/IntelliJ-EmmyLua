@@ -130,10 +130,12 @@ class LuaUnitOutputConverter(
     private val setupFixtures = LinkedHashMap<String, LinkedHashSet<String>>()
 
     /**
-     * The files the file itself opened while loading (`currentCase` is null
-     * on the IDE side until the first CASE marker). For a plain script the
-     * load IS the run, and the load belongs to the file's own node: its
-     * fixtures are shown above the first line of the file.
+     * The files a file without a single case opened while loading (`currentCase`
+     * is null on the IDE side until the first CASE marker). For a plain script
+     * the load IS the run, and the load belongs to the file's own node: its
+     * fixtures are shown above the first line of the file. The runner reports
+     * them for such a file only — a suite's load (its `require`s) is not a test
+     * and sends no marker.
      */
     private val loadFixtures = LinkedHashSet<String>()
 

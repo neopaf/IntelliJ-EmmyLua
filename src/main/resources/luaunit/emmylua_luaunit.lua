@@ -335,14 +335,28 @@ local currentCase = nil
 local caseFilesSeen = {}
 
 -- Fixture tracking: every file a case opens for reading, once per case, in
--- access order. Script-style files run while loading, and the load belongs to
--- the file's own node, so tracking starts before the load.
+-- access order.
+--
+-- The load of a file that declares cases is not a case: the modules it
+-- requires and the data they read belong to no test, and a fixture is what a
+-- test reads. Those reads are collected into `loadFiles` while `loading`, and
+-- the buffer is dropped once the file turns out to declare cases. A plain
+-- script runs entirely on load, and for it the load IS the run: its buffer is
+-- reported before DONE.
+local loading = true
+local loadFiles, loadFilesSeen = {}, {}
+
 io.open = function(filename, mode)
     local handle = realOpen(filename, mode)
     local reading = mode == nil or tostring(mode):sub(1, 1) == 'r'
-    if handle ~= nil and reading and currentCase ~= nil then
+    if handle ~= nil and reading then
         local path = tostring(filename)
-        if not caseFilesSeen[path] then
+        if loading then
+            if not loadFilesSeen[path] then
+                loadFilesSeen[path] = true
+                loadFiles[#loadFiles + 1] = path
+            end
+        elseif currentCase ~= nil and not caseFilesSeen[path] then
             caseFilesSeen[path] = true
             emitMark('FILE', path .. ':1')
         end
@@ -403,7 +417,6 @@ local function loadFailureTrace(text)
     return table.concat(kept, '\n')
 end
 
-currentCase = testFile
 -- The traceback of the load: a plain script runs entirely on load, so this is
 -- the only place the line that threw is named. A case has its own traceback
 -- (see recordFailure); a file that does not load would otherwise show just
@@ -418,6 +431,7 @@ end, function(err)
     loadTrace = debug.traceback(tostring(err), 2)
     return err
 end)
+loading = false
 require = realRequire
 os.exit = loadExit
 lu.LuaUnit.run = luaUnitRun
@@ -460,6 +474,10 @@ end
 
 if #cases == 0 then
     -- Not a luaunit suite: a plain script, already executed by the load above.
+    -- The load is its run, so what it read is its fixtures.
+    for _, path in ipairs(loadFiles) do
+        emitMark('FILE', path .. ':1')
+    end
     emitMark('DONE', '{"name": ' .. quote(testFile) .. ', "cases": [' .. quote(testFile) .. '], "failed": 0}')
     os.exit(0)
 end

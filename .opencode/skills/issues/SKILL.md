@@ -1,6 +1,6 @@
 ---
 name: issues
-description: Use when creating, moving, closing or commenting on GitHub issues for the IntelliJ-EmmyLua plugin — which repository is ours, what to do with an issue filed in a foreign repository by mistake, and how foreign repositories may be used at all.
+description: Use when creating, moving, closing or commenting on GitHub issues for the IntelliJ-EmmyLua plugin — which repository is ours, what to do with an issue filed in a foreign repository by mistake, how foreign repositories may be used at all, and what the approval word «хорошо» triggers.
 ---
 
 # GitHub issues for this project
@@ -54,6 +54,23 @@ works only inside one owner/organisation), so "move" means copy + close:
 3. Reopen/close **only** when there is something to fix (a wrong `completed`
    state or missing link); an issue that is already closed with a correct
    apology and link is left alone.
+
+## «Хорошо» = весь цикл задачи сразу
+
+Одобрение работы словом «хорошо» — это не только подтверждение результата:
+агент сам проходит весь цикл, без отдельных «открой задачу» и «закрой задачу».
+
+1. **Создать задачу** в `neopaf/IntelliJ-EmmyLua` (сначала поиск дубликата, см.
+   выше): что сделано, что проверено в sandbox.
+2. **Открыть задачу**: перевести рабочее пространство на ветку с номером
+   задачи (создать от актуального `master`, если её ещё нет), перенести туда
+   правки этой задачи. Правки другой задачи с собой не тащить — спросить, что
+   с ними (commit / stash / оставить).
+3. **Закрыть задачу**: спросить про commit и push, закоммитить, смержить
+   ветку в `master` (рабочее пространство остаётся на `master`), отписать в
+   задаче и закрыть её.
+
+Версию при этом не поднимаем — это делает релиз.
 
 ## Local rules that stay in force
 
