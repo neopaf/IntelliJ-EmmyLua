@@ -14,8 +14,18 @@ import java.nio.file.Path
  */
 object LuaUnitTexts {
 
-    /** The text of [file]: the open document's copy, the VFS cache, or the disk. */
-    fun read(file: Path): String? {
+    /**
+     * The text of [file]: the open document's copy, the VFS cache, or the disk.
+     *
+     * <p>The lookups touch the platform model (the VFS and the open documents),
+     * and the callers are not always on the EDT: the tests console reads the
+     * failing line of a case on the process reader thread. The read action
+     * makes that legal.
+     */
+    fun read(file: Path): String? =
+        com.intellij.openapi.application.ReadAction.compute<String?, RuntimeException> { readNow(file) }
+
+    private fun readNow(file: Path): String? {
         val virtual = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByNioFile(file)
         if (virtual != null && virtual.isValid) {
             val document = com.intellij.openapi.fileEditor.FileDocumentManager
@@ -41,7 +51,10 @@ object LuaUnitTexts {
      * it is open (every keystroke moves it), the VFS one after a save, the
      * disk's mtime for a file the VFS does not know.
      */
-    fun stamp(file: Path): Long {
+    fun stamp(file: Path): Long =
+        com.intellij.openapi.application.ReadAction.compute<Long, RuntimeException> { stampNow(file) }
+
+    private fun stampNow(file: Path): Long {
         val virtual = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByNioFile(file)
         if (virtual != null && virtual.isValid) {
             val document = com.intellij.openapi.fileEditor.FileDocumentManager

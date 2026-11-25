@@ -1090,8 +1090,17 @@ class LuaUnitTestConsole(
         rememberCaseResult(suite, name, failure, fixtures)
     }
 
-    /** The file a fixture reference of the protocol points at, in canonical form. */
-    private fun resolveFixture(reference: String): String? {
+    /**
+     * The file a fixture reference of the protocol points at, in canonical
+     * form. Resolved inside a read action: the lookup walks the project's PSI,
+     * and the console events arrive on the process reader thread.
+     */
+    private fun resolveFixture(reference: String): String? =
+        com.intellij.openapi.application.ReadAction.compute<String?, RuntimeException> {
+            resolveFixtureNow(reference)
+        }
+
+    private fun resolveFixtureNow(reference: String): String? {
         // The runner appends the line it was read at ("path:1"); a fixture is
         // a whole file, so the suffix goes away.
         val path = reference.replace(Regex(""":\d+$"""), "").trim()
@@ -1306,8 +1315,17 @@ class LuaUnitTestConsole(
         return text.substring(0, match.range.first).count { it == '\n' } + 1
     }
 
-    /** The text of [line] (1-based) of the file at [path], trimmed; "" when unreadable. */
-    private fun lineTextOf(path: String, line: Int): String {
+    /**
+     * The text of [line] (1-based) of the file at [path], trimmed; "" when
+     * unreadable. Read inside a read action: the console events arrive on the
+     * process reader thread, not on the EDT.
+     */
+    private fun lineTextOf(path: String, line: Int): String =
+        com.intellij.openapi.application.ReadAction.compute<String, RuntimeException> {
+            lineTextNow(path, line)
+        }
+
+    private fun lineTextNow(path: String, line: Int): String {
         val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path) ?: return ""
         val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
             .getDocument(file) ?: return ""
