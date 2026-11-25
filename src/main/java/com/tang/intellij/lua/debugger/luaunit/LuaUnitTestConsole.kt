@@ -951,17 +951,12 @@ class LuaUnitTestConsole(
         // on the first line of the file — see [LuaUnitFailureInlayHints].
         rememberFileFailure(suite, failure)
         val node = suite.proxy ?: return
-        // The message is the node's own: a double-click still goes to the
-        // file, not to the failing line of the runner.
-        node.setTestFailed(failure.message, null, failure.isError)
-        val text = buildString {
-            append(failure.message).append('\n')
-            failure.trace?.let { append(it).append('\n') }
-        }
-        printTo(node, text, true)
-        if (::consoleView.isInitialized) {
-            consoleView.print("${suite.key}: ${failure.message}\n", ConsoleViewContentType.ERROR_OUTPUT)
-        }
+        // The message and the trace are the node's own state: a double-click
+        // still goes to the file, not to the failing line of the runner, and
+        // the console prints the state once. Printing them by hand as well put
+        // a plain script's load failure into the output twice — once when the
+        // event arrived and once more on the replay after the process exit.
+        node.setTestFailed(failure.message, failure.trace, failure.isError)
         refreshCountsUp(node)
     }
 
