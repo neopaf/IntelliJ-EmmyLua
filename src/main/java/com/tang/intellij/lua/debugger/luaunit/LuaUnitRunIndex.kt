@@ -124,6 +124,12 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
                 case.caseName = FILE_RECORD
             }
         }
+        // A suite used to get a file-level record too, carrying the files its
+        // load read: they showed at the first line of the file as the test's
+        // fixtures. Such a record is not a test — the cases of the file are —
+        // and a plain script (which has no case record at all) keeps its own.
+        val suiteFiles = state.cases.filter { !it.fileLevel }.mapTo(HashSet()) { it.testFile }
+        state.cases.removeIf { it.fileLevel && it.testFile in suiteFiles }
         val merged = LinkedHashMap<String, CaseResult>()
         for (case in state.cases) {
             merged[case.key()] = case
@@ -158,6 +164,11 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
             }
             merged[case.key()] = case
         }
+        // A file-level record left next to the file's own cases (an older run,
+        // a restore of its state) is not a test: the fixtures of a suite's load
+        // must not show at the first line.
+        val suiteFiles = merged.values.filter { !it.fileLevel }.mapTo(HashSet()) { it.testFile }
+        merged.values.removeIf { it.fileLevel && it.testFile in suiteFiles }
         state.cases = ArrayList(merged.values)
         state.lastRun = System.currentTimeMillis()
         directoryCache = null
