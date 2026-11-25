@@ -159,7 +159,9 @@ class LuaUnitTestConsole(
      * The "(3 passed, 1 failed, 2 ignored)" of a group. A category is shown
      * when the tree shows it (the failed tests have no filter of their own); a
      * zero block is dropped. A case that has not finished yet is not counted
-     * at all: the group's number moves only with the results.
+     * at all: the group's number moves only with the results. A group with
+     * nothing to count yet (the run has just started) has no parentheses at
+     * all — "(0)" would read as a result.
      */
     private fun countSuffix(node: SMTestProxy): String {
         val showPassed = !com.intellij.execution.testframework.TestConsoleProperties
@@ -185,14 +187,20 @@ class LuaUnitTestConsole(
         if (showPassed && passed > 0) parts.add("$passed passed")
         if (failed > 0) parts.add("$failed failed")
         if (showIgnored && ignored > 0) parts.add("$ignored ignored")
-        return "(${parts.joinToString(", ").ifEmpty { "0" }})"
+        return if (parts.isEmpty()) "" else "(${parts.joinToString(", ")})"
+    }
+
+    /** The name of a group node: its label and the counters, when there are some. */
+    private fun groupName(label: String, node: SMTestProxy): String {
+        val suffix = countSuffix(node)
+        return if (suffix.isEmpty()) label else "$label $suffix"
     }
 
     /** Writes the counters of every group node, on the EDT. */
     private fun applyGroupCounts() {
         installHiddenIgnoredRenderer()
         for ((proxy, label) in groupLabels) {
-            proxy.setPresentableName("$label ${countSuffix(proxy)}")
+            proxy.setPresentableName(groupName(label, proxy))
         }
     }
 
@@ -245,7 +253,7 @@ class LuaUnitTestConsole(
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
             for (proxy in chain) {
                 val label = groupLabels[proxy] ?: continue
-                proxy.setPresentableName("$label ${countSuffix(proxy)}")
+                proxy.setPresentableName(groupName(label, proxy))
             }
         }
     }
@@ -703,9 +711,26 @@ class LuaUnitTestConsole(
                 // are grouped: a run of one table of a two-table file still
                 // shows that table as a group. Only a file with a single table
                 // keeps its cases directly on the file node. The groups follow
-                // the order the tables are declared in the file.
-                val tables = suiteTables(suite)
-                val grouped = tables.size > 1
+                // the file: the line of a table's first test, the way a reader
+                // meets them (a table declared above, but with its tests
+                // below another one's, comes second — the tests are what the
+                // reader looks for).
+                val discovered = discoveredCases(suite)
+                val owners = LinkedHashSet<String>()
+                val firstTestLine = HashMap<String, Int>()
+                for (case in discovered) {
+                    val owner = ownerOf(case.name)
+                    if (owner.isEmpty()) {
+                        continue
+                    }
+                    owners.add(owner)
+                    val line = case.source?.line ?: continue
+                    val known = firstTestLine[owner]
+                    if (known == null || line < known) {
+                        firstTestLine[owner] = line
+                    }
+                }
+                val grouped = owners.size > 1
                 val byOwner = LinkedHashMap<String, MutableList<LuaUnitNode.Case>>()
                 for (case in suite.cases) {
                     byOwner.getOrPut(ownerOf(case.name)) { ArrayList() }.add(case)
@@ -714,7 +739,11 @@ class LuaUnitTestConsole(
                 for (case in byOwner[""].orEmpty()) {
                     suiteNode.addChild(caseProxyOf(suite, case))
                 }
-                val ordered = tables + byOwner.keys.filter { it.isNotEmpty() && it !in tables }
+                val ordered = owners.filter { byOwner.containsKey(it) }.sortedWith(
+                    compareBy({ firstTestLine[it] ?: Int.MAX_VALUE }, { it })
+                )
+                com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                    .info("tree groups ${suite.displayName}: owners=$owners lines=$firstTestLine cases=${byOwner.keys}")
                 for (owner in ordered) {
                     val ownerCases = byOwner[owner] ?: continue
                     val ownerNode: SMTestProxy? = if (grouped) {
@@ -789,26 +818,6 @@ class LuaUnitTestConsole(
     /** The suite table a case is declared on: "ABCGroup" for
       * "ABCGroup.test_x", an empty string for a plain global test. */
     private fun ownerOf(caseName: String): String = caseName.substringBeforeLast('.', "")
-
-    /**
-     * The suite tables [suite]'s FILE declares, in the order of their
-     * declarations. The whole file counts, not the run's filtered cases: a run
-     * of one table of a two-table file still shows that table as a group.
-     */
-    private fun suiteTables(suite: LuaUnitSuite): List<String> {
-        val fromCases = discoveredCases(suite)
-            .map { ownerOf(it.name) }
-            .filter { it.isNotEmpty() }
-            .distinct()
-        if (fromCases.size < 2) {
-            return fromCases
-        }
-        val text = LuaUnitTexts.read(suite.file) ?: return fromCases
-        val declared = LuaUnitSuites.declarations(text).filter { it in fromCases }
-        // A table whose declaration is not in the text (built in a loop, or
-        // declared in another file) keeps its case order at the end.
-        return declared + fromCases.filter { it !in declared }
-    }
 
     /** Every case the discovery found for [suite]'s file, not the run's subset. */
     private fun discoveredCases(suite: LuaUnitSuite): List<LuaUnitNode.Case> {
@@ -1127,12 +1136,19 @@ class LuaUnitTestConsole(
         result.generated = case?.generated == true
         result.failed = failure != null
         result.comparison = failure?.expected != null && failure?.actual != null
-        result.fixtures = fixtures.mapNotNull { resolveFixture(it) }.distinct().toMutableList()
+        // The fixtures are exactly what this run saw. A record of a previous
+        // run must not carry over: a case that fails before it reads a file,
+        // or a file taken out of the test's own reading, would keep a stale
+        // fixture visible in its block. The list of one case lives in memory
+        // per case (see [runResults]) and replaces the previous one whole.
+        result.fixtures = fixtures.mapNotNull { resolveFixture(it) }
+            .distinct().toMutableList()
         // The failing line of the trace is the assertion the test wrote, not
         // the declaration of the case: the editor marks that line and shows
         // the message there.
         result.errorFile = ""
         result.errorLine = 0
+        result.errorText = ""
         result.message = ""
         result.expected = null
         result.actual = null
@@ -1147,6 +1163,7 @@ class LuaUnitTestConsole(
             failureSite(failure, result.declarationFile)?.let { (file, line) ->
                 result.errorFile = file
                 result.errorLine = line
+                result.errorText = lineTextOf(file, line)
             } ?: run {
                 // The trace had no frame of the project (a plain `error()` with
                 // no file, say): the declaration is the nearest place to mark.
@@ -1159,6 +1176,67 @@ class LuaUnitTestConsole(
     /** The first line of a failure message, trimmed: the diff panel shows the rest. */
     private fun shortMessage(message: String): String =
         message.lineSequence().firstOrNull()?.trim().orEmpty()
+
+    /**
+     * The files the setUp of [className] opened: a record of its own. The block
+     * above `function <className>:setUp()` shows them, and a fixture's header
+     * links to that method — the setup is not the case's own input.
+     */
+    fun onSetUpFixtures(
+        suite: LuaUnitSuite,
+        className: String,
+        fixtures: List<String>
+    ) = synchronized(lock) {
+        nowOrDefer { onSetUpFixturesNow(suite, className, fixtures) }
+    }
+
+    private fun onSetUpFixturesNow(suite: LuaUnitSuite, className: String, fixtures: List<String>) {
+        if (fixtures.isEmpty()) {
+            return
+        }
+        val line = setUpLine(suite, className) ?: return
+        val testFile = LuaUnitRunIndex.canonical(absolutePathOf(suite.file))
+        val result = runResults.getOrPut(key(testFile, "$className.setUp")) {
+            LuaUnitRunIndex.CaseResult()
+        }
+        result.testFile = testFile
+        result.caseName = "$className.setUp"
+        result.displayName = "setUp"
+        result.declarationFile = testFile
+        result.declarationLine = line
+        result.line = line
+        result.setup = true
+        result.generated = false
+        result.failed = false
+        result.comparison = false
+        result.fixtures = fixtures.mapNotNull { resolveFixture(it) }.distinct().toMutableList()
+    }
+
+    /** The line of `function <className>:setUp(` in the suite's file, or null. */
+    private fun setUpLine(suite: LuaUnitSuite, className: String): Int? {
+        val text = LuaUnitTexts.read(suite.file) ?: return null
+        val pattern = Regex(
+            "(?m)^[ \\t]*function[ \\t]+" + Regex.escape(className) + "[ \\t]*[.:][ \\t]*setUp[ \\t]*\\("
+        )
+        val match = pattern.find(text) ?: return null
+        return text.substring(0, match.range.first).count { it == '\n' } + 1
+    }
+
+    /** The text of [line] (1-based) of the file at [path], trimmed; "" when unreadable. */
+    private fun lineTextOf(path: String, line: Int): String {
+        val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path) ?: return ""
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+            .getDocument(file) ?: return ""
+        if (line < 1 || line > document.lineCount) {
+            return ""
+        }
+        return document.getText(
+            com.intellij.openapi.util.TextRange(
+                document.getLineStartOffset(line - 1),
+                document.getLineEndOffset(line - 1)
+            )
+        ).trim()
+    }
 
     /**
      * The `file:line` of a failure trace that resolves to a real file. A test
@@ -1195,7 +1273,10 @@ class LuaUnitTestConsole(
             val log = com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
             val started = System.currentTimeMillis()
             LuaUnitRunIndex.getInstance(project).publish(results)
-            log.info("publish: ${results.size} results in ${System.currentTimeMillis() - started} ms")
+            log.info(
+                "publish: ${results.size} results in ${System.currentTimeMillis() - started} ms; " +
+                    results.take(6).joinToString { "${it.caseName}=${it.fixtures.size}" }
+            )
             // The code vision, the inlay hints and the fixture panels are
             // cached per editor and know nothing about the index: each of them
             // is invalidated explicitly, or the marks keep the previous run's

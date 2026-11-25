@@ -28,8 +28,104 @@ import java.awt.Font
 import java.awt.Graphics
 import java.awt.Rectangle
 
-/** One element of the block: a link (a file, a folded folder) or a note. */
-internal class Part(val label: String, val paths: List<String>, val link: Boolean = true)
+/**
+ * One element of the block: a link (a file, a folded folder, a count) or a
+ * note. A [muted] link is a link all the same — it is clickable and
+ * underlined, but drawn in the editor's text colour, not in the link one.
+ */
+internal class Part(
+    val label: String,
+    val paths: List<String>,
+    val link: Boolean = true,
+    val muted: Boolean = false
+)
+
+/**
+ * How a fixture file is named in a block of fixtures.
+ *
+ * <p>The extension is noise when every file of a case carries the same one: a
+ * run of a diameter case reads `before.json`, `after.json`, `ocs_request.json`
+ * — the block says `before, after, ocs_request` and stays a readable list
+ * instead of a wall of `.json`. A mixed list keeps every extension, since the
+ * extension is what tells the files apart.
+ *
+ * <p>A base name of two files of different directories is ambiguous
+ * (`EDR/CCA.json` and `CCDR/CCA.json`): such a name keeps its directory, the
+ * way it always did.
+ */
+internal object FixtureNames {
+
+    /** True when every file of [fixtures] has the same (non-empty) extension. */
+    fun sameExtension(fixtures: List<String>): Boolean = commonExtension(fixtures) != null
+
+    /**
+     * The extension every file of [fixtures] has, or null when they differ or
+     * one of them has none.
+     */
+    fun commonExtension(fixtures: List<String>): String? {
+        var common: String? = null
+        for (path in fixtures) {
+            val extension = java.io.File(path).extension
+            if (extension.isEmpty()) {
+                return null
+            }
+            if (common == null) {
+                common = extension
+            } else if (!common.equals(extension, ignoreCase = true)) {
+                return null
+            }
+        }
+        return common
+    }
+
+    /** The name of [path] as the block shows it: with the extension, or without it. */
+    fun nameOf(path: String, dropExtension: Boolean): String =
+        if (dropExtension) java.io.File(path).nameWithoutExtension else java.io.File(path).name
+
+    /**
+     * The names of [fixtures], one per file: the base name, and the parent
+     * directory for the names two files share.
+     */
+    fun labels(fixtures: List<String>, dropExtension: Boolean = false): List<String> {
+        val names = fixtures.map { file -> nameOf(file, dropExtension) }
+        val counts = names.groupingBy { name -> name }.eachCount()
+        return fixtures.withIndex().map { (index, path) ->
+            val name = names[index]
+            if (counts[name] == 1) {
+                name
+            } else {
+                val parent = java.io.File(path).parentFile?.name
+                if (parent.isNullOrBlank()) name else "$parent/$name"
+            }
+        }
+    }
+}
+
+/**
+ * The title of a popup with the files of a fixture folder: the folder itself,
+ * relative to the project root (`testdata/cca`), so the reader knows which
+ * folder they are looking at. A list that spans several folders (no block
+ * element does, but a caller may hand one) keeps the plain title.
+ */
+internal fun fixturePopupTitle(project: com.intellij.openapi.project.Project, paths: List<String>): String {
+    val parents = paths.mapNotNull { java.io.File(it).parent }.distinct()
+    if (parents.size != 1) {
+        return "Fixtures"
+    }
+    val folder = java.io.File(parents.first()).toPath().toAbsolutePath().normalize()
+    val base = project.basePath?.let { java.io.File(it).toPath().toAbsolutePath().normalize() }
+    val relative = if (base != null) {
+        try {
+            base.relativize(folder).toString().replace('\\', '/')
+        } catch (e: IllegalArgumentException) {
+            // Another root drive (Windows): the folder has no path in the project.
+            ""
+        }
+    } else {
+        ""
+    }
+    return relative.ifEmpty { folder.fileName?.toString() ?: parents.first() }
+}
 
 /**
  * Paints the block: `-- file1.json, file2.json, cca/... (12)`, wrapped over as
@@ -121,7 +217,11 @@ internal class Renderer(
         for (cell in cells) {
             val row = cell.bounds.y / lineHeight
             val x = targetRegion.x + cell.bounds.x
-            g.color = if (cell.part?.link == true) linkColor() else JBColor.GRAY
+            g.color = when {
+                cell.part?.link != true -> JBColor.GRAY
+                cell.part?.muted == true -> mutedColor()
+                else -> linkColor()
+            }
             g.drawString(cell.text, x, baseline(targetRegion, row))
             if (cell.part?.link == true) {
                 val underlineY = baseline(targetRegion, row) + 1
@@ -150,6 +250,9 @@ internal class Renderer(
         EditorColorsManager.getInstance().globalScheme
             .getAttributes(CodeInsightColors.HYPERLINK_ATTRIBUTES)?.foregroundColor
             ?: JBColor.BLUE
+
+    /** The colour of the editor's own text: a quiet link is drawn with it. */
+    private fun mutedColor(): Color = editor.colorsScheme.defaultForeground ?: JBColor.GRAY
 
     companion object {
         private const val PREFIX = "-- "

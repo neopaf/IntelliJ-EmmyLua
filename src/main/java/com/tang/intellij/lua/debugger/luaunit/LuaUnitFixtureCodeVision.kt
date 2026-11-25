@@ -87,7 +87,9 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
                 if (!LuaUnitCaseLines.declares(document, line, case)) {
                     continue
                 }
-                val files = labels(case.fixtures).joinToString(", ")
+                val files = FixtureNames.labels(
+                    case.fixtures, FixtureNames.sameExtension(case.fixtures)
+                ).joinToString(", ")
                 if (files.isNotEmpty()) {
                     fixtures.getOrPut(line) { ArrayList() }.add(case to files)
                 }
@@ -162,11 +164,11 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
                 // the entry offers the list and every name opens its own file.
                 // The popup names a file the same way the entry does: the
                 // directory is kept for colliding base names.
-                val labels = labels(paths)
+                val labels = FixtureNames.labels(paths)
                 val byPath = paths.withIndex().associate { (index, path) -> path to labels[index] }
                 com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
                     .createPopupChooserBuilder(files)
-                    .setTitle("Fixtures")
+                    .setTitle(fixturePopupTitle(project, paths))
                     .setNamerForFiltering { byPath[it.path] ?: it.name }
                     .setRenderer(object : com.intellij.ui.SimpleListCellRenderer<com.intellij.openapi.vfs.VirtualFile>() {
                         override fun customize(
@@ -252,7 +254,7 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
          * stays spelled out file by file.
          */
         private fun foldedParts(fixtures: List<String>): List<Part> {
-            val plain = labels(fixtures)
+            val plain = FixtureNames.labels(fixtures, FixtureNames.sameExtension(fixtures))
             val byParent = fixtures.withIndex().groupBy { parentOf(it.value) }
             val foldedFiles = HashMap<String, List<String>>()
             for ((parent, items) in byParent) {
@@ -295,18 +297,6 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
             }
             val names = files.map { java.io.File(it).name }.toSet()
             return children.all { it.name in names }
-        }
-
-        private fun labels(fixtures: List<String>): List<String> {
-            val names = fixtures.map { java.io.File(it).name }
-            val counts = names.groupingBy { it }.eachCount()
-            return fixtures.withIndex().map { (index, path) ->
-                val name = names[index]
-                if (counts[name] == 1) name else {
-                    val parent = java.io.File(path).parentFile?.name
-                    if (parent.isNullOrBlank()) name else "$parent/$name"
-                }
-            }
         }
     }
 }

@@ -27,6 +27,7 @@ package com.tang.intellij.lua.debugger.luaunit
 object LuaUnitProtocol {
 
     const val CASE = "@@EMLUA_LUAUNIT_CASE@@"
+    const val BODY = "@@EMLUA_LUAUNIT_BODY@@"
     const val FAIL = "@@EMLUA_LUAUNIT_FAIL@@"
     const val DONE = "@@EMLUA_LUAUNIT_DONE@@"
     const val FILE = "@@EMLUA_LUAUNIT_FILE@@"
@@ -49,6 +50,7 @@ object LuaUnitProtocol {
 
     sealed class Event {
         data class CaseStarted(val name: String) : Event()
+        data class BodyStarted(val className: String) : Event()
         data class CaseFailed(val failure: Failure) : Event()
         data class CaseSkipped(val reason: String) : Event()
         data class Fixture(val file: String) : Event()
@@ -58,6 +60,7 @@ object LuaUnitProtocol {
     fun parseLine(line: String): Event? {
         return when {
             line.startsWith(CASE) -> Event.CaseStarted(line.substring(CASE.length).trim())
+            line.startsWith(BODY) -> Event.BodyStarted(line.substring(BODY.length).trim())
             line.startsWith(SKIP) -> Event.CaseSkipped(line.substring(SKIP.length).trim())
             line.startsWith(FILE) -> Event.Fixture(line.substring(FILE.length).trim())
             line.startsWith(FAIL) -> Json.decodeFailure(line.substring(FAIL.length))

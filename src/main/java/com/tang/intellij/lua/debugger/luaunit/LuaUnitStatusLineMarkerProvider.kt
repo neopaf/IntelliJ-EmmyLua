@@ -71,7 +71,10 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         val path = LuaUnitRunIndex.canonical(virtualFile.path)
         if (offset == first) {
             val declared = index.casesDeclaredIn(path)
-                .filter { it.declarationLine == line && LuaUnitCaseLines.declares(document, line, it) }
+                .filter {
+                    !it.setup && it.declarationLine == line &&
+                        LuaUnitCaseLines.declares(document, line, it)
+                }
             if (declared.isNotEmpty()) {
                 return statusMarker(element, declared, "LuaUnit")
             }

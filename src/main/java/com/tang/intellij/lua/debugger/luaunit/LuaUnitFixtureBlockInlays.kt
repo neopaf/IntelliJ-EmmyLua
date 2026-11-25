@@ -41,10 +41,12 @@ import java.util.WeakHashMap
  * the list is a link of its own, so a click goes straight to that file.
  *
  * <p>More than [FOLD_AFTER] files of one folder are folded into one element:
- * `cca/... (N)` for a folder the case read whole, `cca/x.json (+N more)` for a
- * folder it read in part. Only the text inside the parentheses is a link of
- * its own (it opens the popup with the files); the parentheses and the commas
- * between elements are plain notes, never links.
+ * `cca/... (N)` for a folder the case read whole, `cca/x.json (N total,
+ * M skipped)` for a folder it read in part. The file and the two counts are
+ * links of their own (the file opens it, `N total` the folder, `M skipped`
+ * the files the case did not read — drawn in the text colour); the
+ * parentheses and the commas between the elements are plain notes. A folder
+ * read whole is one link and a plain count.
  *
  * <p>The blocks are built when an editor opens and rebuilt after a run (see
  * [LuaUnitHighlights.refresh]); they never walk the PSI.
@@ -54,6 +56,7 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
     override fun editorCreated(event: EditorFactoryEvent) {
         val editor = event.editor
         val project = editor.project ?: return
+        ensureSubscribed(project)
         if (LuaUnitHighlights.isRunning()) {
             return
         }
@@ -79,6 +82,54 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
         )
 
         private val MOUSE_INSTALLED: Key<Unit> = Key.create("luaunit.fixtures.mouse")
+
+        /** The projects whose editor manager is already listened to. */
+        private val subscribed = java.util.concurrent.ConcurrentHashMap.newKeySet<Project?>()
+
+        /**
+         * A file opened from a fixture's header (or a tab switched to) must
+         * show its blocks at once: `editorCreated` does not fire for a file
+         * whose editor already exists, so the run's blocks were shown only
+         * after the next run with the file open.
+         */
+        fun ensureSubscribed(project: Project) {
+            if (!subscribed.add(project)) {
+                return
+            }
+            project.messageBus.connect(project).subscribe(
+                com.intellij.openapi.fileEditor.FileEditorManagerListener.FILE_EDITOR_MANAGER,
+                object : com.intellij.openapi.fileEditor.FileEditorManagerListener {
+                    override fun fileOpened(
+                        source: com.intellij.openapi.fileEditor.FileEditorManager,
+                        file: com.intellij.openapi.vfs.VirtualFile
+                    ) {
+                        rebuildFile(project, file)
+                    }
+
+                    override fun selectionChanged(event: com.intellij.openapi.fileEditor.FileEditorManagerEvent) {
+                        event.newFile?.let { rebuildFile(project, it) }
+                    }
+                }
+            )
+        }
+
+        /** Rebuilds the blocks of every editor of [file]. */
+        private fun rebuildFile(project: Project, file: com.intellij.openapi.vfs.VirtualFile) {
+            if (LuaUnitHighlights.isRunning()) {
+                return
+            }
+            for (editor in com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).getAllEditors(file)) {
+                val textEditor = editor as? com.intellij.openapi.fileEditor.TextEditor ?: continue
+                try {
+                    rebuild(project, textEditor.editor)
+                } catch (e: ProcessCanceledException) {
+                    throw e
+                } catch (e: Exception) {
+                    com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                        .warn("fixture inlays: ${e.message}", e)
+                }
+            }
+        }
 
         /** More than this many files of one folder are folded into one. */
         private const val FOLD_AFTER = 10
@@ -110,6 +161,7 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
 
         private fun rebuild(project: Project, editor: Editor) {
             clear(editor)
+            ensureSubscribed(project)
             if (LuaUnitHighlights.isRunning()) {
                 return
             }
@@ -147,14 +199,17 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
                     continue
                 }
                 val first = cases.first()
-                // A block element of the declaration line's end is painted
-                // above that line: right over the `function` / `id =` line.
-                val offset = editor.document.getLineEndOffset((line - 1).coerceAtLeast(0))
+                // The block is anchored to the start of the declaration line:
+                // a block element at the line's end moves with the newline a
+                // `Enter` at that end inserts — the block slid under the
+                // `function` line and stayed in the body. The line start does
+                // not move, so the block stays above its declaration.
+                val lineStart = editor.document.getLineStartOffset((line - 1).coerceAtLeast(0))
+                val offset = lineStart
                 // The block starts in the column the declaration starts in
                 // (`function`, `id = ...`): its own leading blanks are kept.
-                val lineStart = editor.document.getLineStartOffset((line - 1).coerceAtLeast(0))
                 var firstNonBlank = lineStart
-                while (firstNonBlank < offset &&
+                while (firstNonBlank < editor.document.getLineEndOffset((line - 1).coerceAtLeast(0)) &&
                     editor.document.charsSequence[firstNonBlank].isWhitespace()
                 ) {
                     firstNonBlank++
@@ -167,6 +222,9 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
                 }
             }
             blocks[editor] = inlays
+            com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit").info(
+                "fixtures blocks ${file.name}: ${inlays.size} of ${byLine.size} lines"
+            )
             // A rebuild may be the first time the editor is seen (the results
             // arrived after the editor was created): the mouse has to be
             // installed here too, not only in editorCreated.
@@ -246,11 +304,11 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
                 1 -> com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
                     .openFile(files.first(), true)
                 else -> {
-                    val names = labels(ordered)
+                    val names = FixtureNames.labels(ordered)
                     val byPath = ordered.withIndex().associate { (index, path) -> path to names[index] }
                     JBPopupFactory.getInstance()
                         .createPopupChooserBuilder(files)
-                        .setTitle("Fixtures")
+                        .setTitle(fixturePopupTitle(project, ordered))
                         .setNamerForFiltering { byPath[it.path] ?: it.name }
                         .setRenderer(object : SimpleListCellRenderer<com.intellij.openapi.vfs.VirtualFile>() {
                             override fun customize(
@@ -281,14 +339,17 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
          *
          * <p>More than [FOLD_AFTER] files of one folder are one element: the
          * folder itself with its count (`cca/... (12)`) when the case read it
-         * whole, its first file with the rest counted (`cca/x.json (+19 more)`)
-         * otherwise. The count inside the parentheses is a link of its own; the
-         * parentheses and the commas are notes.
+         * whole, its first file with what the folder holds otherwise
+         * (`cca/x.json (12 total, 9 skipped)`). A folder read whole is one
+         * link and a plain count; a folder read in part is the first file (a
+         * link to it) and two links of its own — `N total` lists the folder,
+         * `M skipped` lists the files the case did not read. The commas and
+         * the parentheses are notes.
          */
         private fun foldedParts(fixtures: List<String>): List<Part> {
+            val dropExtension = FixtureNames.sameExtension(fixtures)
             val byParent = fixtures.withIndex().groupBy { path -> parentOf(path.value) }
-            val complete = HashMap<String, List<String>>()
-            val many = HashMap<String, List<String>>()
+            val folded = HashMap<String, Fold>()
             for ((parent, items) in byParent) {
                 if (parent.isEmpty()) {
                     continue
@@ -297,47 +358,37 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
                 if (files.size <= FOLD_AFTER) {
                     continue
                 }
-                if (folderComplete(parent, files)) {
-                    complete[parent] = files
-                } else {
-                    many[parent] = files
-                }
+                folded[parent] = foldOf(parent, files)
             }
-            val plain = labels(fixtures)
+            val plain = FixtureNames.labels(fixtures, dropExtension)
             val groups = ArrayList<List<Part>>()
             val seenFolders = HashSet<String>()
             for ((index, path) in fixtures.withIndex()) {
                 val parent = parentOf(path)
-                val whole = complete[parent]
-                if (whole != null) {
+                val fold = folded[parent]
+                if (fold != null) {
                     if (seenFolders.add(parent)) {
-                        // The whole folder is one entry: its own popup list.
-                        groups.add(
-                            note(
-                                java.io.File(parent).name + "/*",
-                                whole.size,
-                                whole,
-                                whole,
-                                plus = false
+                        if (fold.skipped.isEmpty()) {
+                            // Nothing of the folder's own kind is left out: the
+                            // whole folder is one entry with its popup. The
+                            // kind is spelled out (`*.json`), so the folder of
+                            // a mixed tree says what was read.
+                            val kind = fold.extension?.let { "*.$it" } ?: "*"
+                            groups.add(wholeNote(java.io.File(parent).name + "/" + kind, fold.taken))
+                        } else {
+                            // The first file is a link to it; the two counts
+                            // open their own lists — the folder, and what the
+                            // case skipped.
+                            groups.add(
+                                partialNote(
+                                    java.io.File(parent).name + "/" +
+                                        FixtureNames.nameOf(path, dropExtension),
+                                    path,
+                                    fold.relevant,
+                                    fold.skipped
+                                )
                             )
-                        )
-                    }
-                    continue
-                }
-                val partial = many[parent]
-                if (partial != null) {
-                    if (seenFolders.add(parent)) {
-                        // The file's link is direct; the popup is opened by
-                        // the "more" in the parentheses only.
-                        groups.add(
-                            note(
-                                java.io.File(parent).name + "/" + java.io.File(path).name,
-                                partial.size - 1,
-                                listOf(path),
-                                partial,
-                                plus = true
-                            )
-                        )
+                        }
                     }
                     continue
                 }
@@ -353,50 +404,78 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
             return parts
         }
 
+        /** A folded folder: what the case took, what of it was left out. */
+        private class Fold(
+            /** The files of the folder the case opened. */
+            val taken: List<String>,
+            /** The files of the case's own kind in the folder: all of them. */
+            val relevant: List<String>,
+            /** The files of [relevant] the case did not open. */
+            val skipped: List<String>,
+            /** The extension shared by [taken], or null when they differ. */
+            val extension: String?
+        )
+
         /**
-         * A link with its count in parentheses: `cca/... (12)` or
-         * `cca/x.json (+19 more)`. Only the text inside the parentheses is a
-         * link of its own — the parentheses are a note.
+         * Folds [taken] files of [parent] into one element.
+         *
+         * <p>A case that reads the `.json` rows of a folder does not skip the
+         * `.pcap` files next to them: when every taken file has the same
+         * extension, only the files of that extension are the folder's own
+         * kind, and only they count as total and skipped. With nothing of the
+         * kind left out, the folder is shown whole (`cca/... (12)`).
          */
-        private fun note(
+        private fun foldOf(parent: String, taken: List<String>): Fold {
+            val all = folderFiles(parent) ?: taken
+            val extension = FixtureNames.commonExtension(taken)
+            val relevant = if (extension != null) {
+                all.filter { file -> java.io.File(file).extension.equals(extension, ignoreCase = true) }
+            } else {
+                all
+            }
+            val opened = taken.toSet()
+            return Fold(taken, relevant, relevant.filter { file -> file !in opened }, extension)
+        }
+
+        /**
+         * A folder the case read whole: its link and the plain number of its
+         * files (`cca/... (12)`) — the link opens the folder's files.
+         */
+        private fun wholeNote(link: String, files: List<String>): List<Part> =
+            listOf(
+                Part(link, files),
+                Part(" (", emptyList(), link = false),
+                Part("${files.size}", emptyList(), link = false),
+                Part(")", emptyList(), link = false)
+            )
+
+        /**
+         * A folder the case read in part: the file it opened, then the two
+         * counts — `cca/x.json (12 total, 9 skipped)`. The `N total` opens
+         * the whole folder, the `M skipped` — the files the case did not read
+         * (a quiet link: the colour of the editor's own text).
+         */
+        private fun partialNote(
             link: String,
-            count: Int,
-            linkPaths: List<String>,
-            notePaths: List<String>,
-            plus: Boolean
+            path: String,
+            folder: List<String>,
+            skipped: List<String>
         ): List<Part> =
             listOf(
-                Part(link, linkPaths),
+                Part(link, listOf(path)),
                 Part(" (", emptyList(), link = false),
-                Part(if (plus) "+$count more" else "$count", notePaths),
+                Part("${folder.size} total", folder),
+                Part(", ", emptyList(), link = false),
+                Part("${skipped.size} skipped", skipped, muted = true),
                 Part(")", emptyList(), link = false)
             )
 
         private fun parentOf(path: String): String = java.io.File(path).parent ?: ""
 
-        /** True when every file of [parent] is among [files] (no unused one). */
-        private fun folderComplete(parent: String, files: List<String>): Boolean {
-            val directory = LocalFileSystem.getInstance().findFileByPath(parent) ?: return false
-            val children = directory.children.filter { child -> !child.isDirectory }
-            if (children.isEmpty()) {
-                return false
-            }
-            val names = files.map { file -> java.io.File(file).name }.toSet()
-            return children.all { child -> child.name in names }
-        }
-
-        private fun labels(fixtures: List<String>): List<String> {
-            val names = fixtures.map { file -> java.io.File(file).name }
-            val counts = names.groupingBy { name -> name }.eachCount()
-            return fixtures.withIndex().map { (index, path) ->
-                val name = names[index]
-                if (counts[name] == 1) {
-                    name
-                } else {
-                    val parent = java.io.File(path).parentFile?.name
-                    if (parent.isNullOrBlank()) name else "$parent/$name"
-                }
-            }
+        /** The files of [parent], or null when the directory is gone. */
+        private fun folderFiles(parent: String): List<String>? {
+            val directory = LocalFileSystem.getInstance().findFileByPath(parent) ?: return null
+            return directory.children.filter { child -> !child.isDirectory }.map { child -> child.path }
         }
     }
 }

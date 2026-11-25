@@ -28,6 +28,7 @@ class LuaUnitProjectActivity : ProjectActivity {
         // file, but the editors restored with the project were created before
         // the index was loaded: their fixture blocks are built here, once the
         // project is up.
+        LuaUnitFixtureBlockInlays.ensureSubscribed(project)
         LuaUnitHighlights.refresh(project, "project opened")
 
         val runManager = RunManager.getInstance(project)
