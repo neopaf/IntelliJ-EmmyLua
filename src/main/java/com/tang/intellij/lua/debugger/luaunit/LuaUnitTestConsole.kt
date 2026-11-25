@@ -729,6 +729,14 @@ class LuaUnitTestConsole(
                 // root (the display name already is one), never a drag URL
                 // with a ":1" line suffix.
                 suiteNodePaths[suiteNode] = suite.displayName
+                // A file node WITH cases has no location URL (a double-click
+                // toggles it), so the platform builds no Run entries for it:
+                // these actions run the whole file instead. A file without a
+                // case keeps its URL and the platform's own entries, which
+                // already start exactly that file.
+                if (suite.cases.isNotEmpty()) {
+                    LuaUnitSuiteNodeFiles.remember(suiteNode, suite.file)
+                }
                 suiteById(suite.displayName)?.proxy = suiteNode
                 // The suite tables of the whole FILE decide whether the cases
                 // are grouped: a run of one table of a two-table file still

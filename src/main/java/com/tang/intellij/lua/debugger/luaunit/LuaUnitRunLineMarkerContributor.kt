@@ -17,8 +17,6 @@
 package com.tang.intellij.lua.debugger.luaunit
 
 import com.intellij.execution.ProgramRunnerUtil
-import com.intellij.execution.RunManager
-import com.intellij.execution.configurations.RunConfiguration
 import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.lineMarker.RunLineMarkerContributor
@@ -229,24 +227,9 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
                 val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
                     ?: return
                 configure(template)
-                openSettings(project, template, event)
+                LuaUnitRunConfigurations.openSettings(project, template, event)
             }
         }
-    }
-
-    /** Adds the temporary [template] to the manager, selects it and edits it. */
-    private fun openSettings(
-        project: Project,
-        template: LuaUnitRunConfiguration,
-        event: AnActionEvent
-    ) {
-        val settings = reuseOrCreate(project, template) ?: return
-        val runManager = RunManager.getInstance(project)
-        if (settings !in runManager.allSettings) {
-            runManager.addConfiguration(settings)
-        }
-        runManager.selectedConfiguration = settings
-        com.intellij.execution.actions.EditRunConfigurationsAction().actionPerformed(event)
     }
 
     /** Runs (or debugs) the scope a fresh configuration [configure] points at. */
@@ -263,7 +246,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
                 val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
                     ?: return
                 configure(template)
-                val settings = reuseOrCreate(project, template) ?: return
+                val settings = LuaUnitRunConfigurations.reuseOrCreate(project, template) ?: return
                 ProgramRunnerUtil.executeConfiguration(settings, executor(debug))
             }
         }
@@ -376,7 +359,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
                 if (!LuaUnitRunConfigurationProducer().configureFor(element, template)) {
                     return
                 }
-                openSettings(project, template, event)
+                LuaUnitRunConfigurations.openSettings(project, template, event)
             }
         }
     }
@@ -474,16 +457,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
                 val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
                     ?: return
                 template.configureDataCase(generator.file, generator.suite, generator.prefix, id)
-                val settings = reuseOrCreate(project, template) ?: return
-                // A temporary configuration must be known to the manager
-                // before it can be selected; the settings dialog then opens
-                // with THIS configuration already chosen.
-                val runManager = RunManager.getInstance(project)
-                if (settings !in runManager.allSettings) {
-                    runManager.addConfiguration(settings)
-                }
-                runManager.selectedConfiguration = settings
-                com.intellij.execution.actions.EditRunConfigurationsAction().actionPerformed(event)
+                LuaUnitRunConfigurations.openSettings(project, template, event)
             }
         }
     }
@@ -515,7 +489,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
                 val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
                     ?: return
                 template.configureDataCase(generator.file, generator.suite, generator.prefix, id)
-                val settings = reuseOrCreate(project, template) ?: return
+                val settings = LuaUnitRunConfigurations.reuseOrCreate(project, template) ?: return
                 ProgramRunnerUtil.executeConfiguration(settings, executor(debug))
             }
         }
@@ -528,42 +502,8 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         if (!LuaUnitRunConfigurationProducer().configureFor(element, template)) {
             return
         }
-        val settings = reuseOrCreate(project, template) ?: return
+        val settings = LuaUnitRunConfigurations.reuseOrCreate(project, template) ?: return
         ProgramRunnerUtil.executeConfiguration(settings, executor(debug))
-    }
-
-    /**
-     * The configuration of the previous run of the same scope, or a new
-     * temporary one.
-     *
-     * <p>A configuration of an older build may carry the same scope with an
-     * empty `--pattern`: reusing it as is would quietly widen the run to every
-     * case of the file, so the scope fields of this click are copied into the
-     * reused configuration too.
-     */
-    private fun reuseOrCreate(
-        project: Project,
-        template: LuaUnitRunConfiguration
-    ): com.intellij.execution.RunnerAndConfigurationSettings? {
-        val runManager = RunManager.getInstance(project)
-        val existing = runManager.allSettings.firstOrNull { settings ->
-            val configuration = settings.configuration as? LuaUnitRunConfiguration
-                ?: return@firstOrNull false
-            configuration.scopeKind == template.scopeKind &&
-                    configuration.scopeFile == template.scopeFile &&
-                    configuration.scopeName == template.scopeName
-        }
-        if (existing != null) {
-            (existing.configuration as? LuaUnitRunConfiguration)?.let { configuration ->
-                configuration.casePattern = template.casePattern
-                configuration.workingDir = template.workingDir
-            }
-            return existing
-        }
-        val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
-        return runManager
-            .createConfiguration(template as RunConfiguration, factory)
-            .also { it.isTemporary = true }
     }
 
     /** The Run entry keeps the green triangle, the Debug one shows the bug. */
