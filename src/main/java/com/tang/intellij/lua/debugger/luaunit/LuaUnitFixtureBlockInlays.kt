@@ -128,6 +128,12 @@ class LuaUnitFixtureBlockInlays : EditorFactoryListener {
                 if (case.declarationLine < 1 || case.declarationLine > editor.document.lineCount) {
                     continue
                 }
+                // The file may have changed since the run: a record whose
+                // line no longer declares the case would put the fixtures of
+                // a dead case into the body of a live one.
+                if (!LuaUnitCaseLines.declares(editor.document, case.declarationLine, case)) {
+                    continue
+                }
                 byLine.getOrPut(case.declarationLine) { ArrayList() }.add(case)
             }
             if (byLine.isEmpty()) {

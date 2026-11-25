@@ -84,6 +84,9 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
                 if (line < 1 || line > document.lineCount) {
                     continue
                 }
+                if (!LuaUnitCaseLines.declares(document, line, case)) {
+                    continue
+                }
                 val files = labels(case.fixtures).joinToString(", ")
                 if (files.isNotEmpty()) {
                     fixtures.getOrPut(line) { ArrayList() }.add(case to files)

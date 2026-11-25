@@ -409,6 +409,12 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
             if (failure.declarationLine < 1 || failure.declarationLine > document.lineCount) {
                 return 0
             }
+            // The file may have changed since the run: a record whose line no
+            // longer declares the case is stale, and a hint of it would land
+            // in the body of another case.
+            if (!LuaUnitCaseLines.declares(document, failure.declarationLine, failure)) {
+                return 0
+            }
             if (isDataRow(file, document, failure)) {
                 val attribute = LuaUnitDataRows.namedFieldLine(
                     file, document, failure.declarationLine, failure.message
