@@ -107,16 +107,26 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
         }
         return cases.map { item ->
             val dot = item.name.lastIndexOf('.')
-            var displayName = if (dot >= 0) item.name.substring(dot + 1) else item.name
-            // The "test_" prefix carries no information in the tree: drop it.
-            if (displayName.startsWith("test_")) {
-                displayName = displayName.removePrefix("test_")
-            }
+            val displayName = if (dot >= 0) item.name.substring(dot + 1) else item.name
             LuaUnitNode.Case(
-                item.name, displayName, LuaUnitProtocol.parseSource(item.source),
+                item.name, displayName(displayName), LuaUnitProtocol.parseSource(item.source),
                 item.ignored, item.description, item.idLine > 0
             )
         }
+    }
+
+    /**
+     * The name shown in the tree: the `test_` prefix carries no information
+     * there, and a CamelCase test name ("testUnpackRadius") drops the bare
+     * "test" as well — the tree reads better and the case is still the same.
+     * Anything else ("testing_foo", or the name "test" itself) is left alone:
+     * there the prefix is part of the name. Only the shown name changes, a
+     * copy of the case still carries the declared name.
+     */
+    private fun displayName(name: String): String = when {
+        name.startsWith("test_") -> name.removePrefix("test_")
+        name.length > 4 && name.startsWith("test") && name[4].isUpperCase() -> name.substring(4)
+        else -> name
     }
 
     /** The file name the suite node is named with: relative to the working directory. */

@@ -348,13 +348,16 @@
     <actions>
         <!-- The context menu of the tests tree: Copy Test Name works even
              after a double-click moved the focus to the editor. Its shortcut
-             is registered ON THE TREE programmatically (the platform's
-             native Cmd/Ctrl+C): a component binding wins over the global
-             $Copy while the tree has the focus, and declaring it here in
-             $default would only collide with $Copy's own key. -->
+             is inherited from $Copy with use-shortcut-of: the platform prints
+             it next to the menu item, and KeymapManager owns the registered
+             action's shortcut set. While the tree has the focus the same keys
+             are bound to a separate, never-registered instance of this action
+             (see LuaUnitTestConsole), so the tree copies the test name rather
+             than the global $Copy's PSI reference. -->
         <action id="LuaUnit.CopyTestName"
                 class="com.tang.intellij.lua.debugger.luaunit.LuaUnitCopyTestNameAction"
-                text="Copy Test Name">
+                text="Copy Test Name"
+                use-shortcut-of="$Copy">
             <add-to-group group-id="TestTreePopupMenu" anchor="first"/>
         </action>
         <group id="LuaCallHierarchyPopupMenu">

@@ -83,17 +83,31 @@ class LuaUnitCopyTestNameAction : AnAction("Copy Test Name", null, AllIcons.Acti
             com.intellij.openapi.util.Key.create("luaunit.copyName")
 
         /**
-         * What "Copy Test Name" puts on the clipboard for [case]: a declared
-         * case keeps its `test_` prefix (`test_ccri_cps_fail`), a generated
-         * one is the data row's own name (`ccri_int`) — and neither carries the
-         * description the tree shows in parentheses.
+         * What "Copy Test Name" puts on the clipboard for [case]: the name
+         * LuaUnit itself uses, with no class part and without the description
+         * the tree shows in parentheses.
+         *
+         * A declared case copies its function name taken from
+         * [LuaUnitNode.Case.name], never rebuilt from the display name: the
+         * tree drops the `test_` prefix for readability, but only when the
+         * prefix is there — a case declared as `testUnpackRadius` has no
+         * `test_` to drop, and `"test_" + displayName` would invent a second
+         * prefix.
+         *
+         * A generated case copies its data row's own name
+         * ([LuaUnitNode.Case.displayName]): the generator's `test_` prefix is
+         * part of the loop it was built in, not of the row, so it is not
+         * copied.
          */
         fun copyName(case: LuaUnitNode.Case): String =
-            if (case.generated) case.displayName else "test_" + case.displayName
+            if (case.generated) case.displayName else case.name.substringAfterLast('.')
 
         /** Remembers [case]'s copyable name on its tree node. */
         fun remember(proxy: SMTestProxy, case: LuaUnitNode.Case) {
             proxy.putUserData(COPY_NAME, copyName(case))
         }
+
+        /** The copyable name of a case node, if it has one. */
+        fun savedName(proxy: SMTestProxy): String? = proxy.getUserData(COPY_NAME)
     }
 }
