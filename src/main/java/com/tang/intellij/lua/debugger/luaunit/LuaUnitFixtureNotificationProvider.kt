@@ -76,7 +76,11 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
     private fun createPanel(project: Project, tests: List<LuaUnitRunIndex.CaseResult>): JComponent {
         val panel = EditorNotificationPanel(EditorNotificationPanel.Status.Info)
         panel.removeAll()
-        panel.add(JBLabel(AllIcons.Nodes.Test), BorderLayout.WEST)
+        // The icon and the first link must not touch: the panel's layout gives
+        // no gap of its own.
+        val icon = JBLabel(AllIcons.Nodes.Test)
+        icon.border = com.intellij.util.ui.JBUI.Borders.emptyRight(6)
+        panel.add(icon, BorderLayout.WEST)
         panel.add(linksPane(project, tests), BorderLayout.CENTER)
         return panel
     }
