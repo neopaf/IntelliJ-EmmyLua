@@ -360,6 +360,27 @@
                 use-shortcut-of="$Copy">
             <add-to-group group-id="TestTreePopupMenu" anchor="first"/>
         </action>
+        <!-- A file node of the tests tree runs its file as one process (the
+             FILE scope of the manifest's entry line). The platform builds its
+             own Run entries from the node's location, which is a line of the
+             file; the actions below know the file itself, and a file without
+             cases (a plain script the runner executes on load) has no other
+             entry point at all. -->
+        <action id="LuaUnit.RunSuite"
+                class="com.tang.intellij.lua.debugger.luaunit.LuaUnitRunSuiteAction"
+                text="Run">
+            <add-to-group group-id="TestTreePopupMenu" anchor="before" relative-to-action="openAssertEqualsDiff"/>
+        </action>
+        <action id="LuaUnit.DebugSuite"
+                class="com.tang.intellij.lua.debugger.luaunit.LuaUnitDebugSuiteAction"
+                text="Debug">
+            <add-to-group group-id="TestTreePopupMenu" anchor="after" relative-to-action="LuaUnit.RunSuite"/>
+        </action>
+        <action id="LuaUnit.ModifySuiteRun"
+                class="com.tang.intellij.lua.debugger.luaunit.LuaUnitModifySuiteRunAction"
+                text="Modify Run Configuration...">
+            <add-to-group group-id="TestTreePopupMenu" anchor="after" relative-to-action="LuaUnit.DebugSuite"/>
+        </action>
         <group id="LuaCallHierarchyPopupMenu">
             <reference ref="EditSource"/>
         </group>

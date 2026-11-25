@@ -75,6 +75,10 @@ tree — the same file node a suite gets:
 
 - a double-click on the node opens the file at its **first line** (a node
   whose file has cases toggles instead, as before);
+- the node's context menu runs the file — `Run 'file.lua'`, `Debug 'file.lua'`
+  and `Modify Run Configuration...` come from the node's location URL and
+  start the whole script as one process (the FILE scope of the manifest's
+  entry line);
 - a failure of the load (a missing module, a syntax error, an assertion in
   the script) is shown on the file's node and as a failure inlay on the right
   of the first line — the same `-- ❌ ...` hint a case gets, with the diff when
@@ -144,6 +148,11 @@ not prose — they never become part of a description.
   actions. A data row several suites build their cases from is more than one
   test: the icon's menu asks which one to run — a labelled Run/Debug pair
   (plus Modify Run Configuration) per generator file.
+- **A file node with cases in the tests tree** — its context menu carries Run,
+  Debug and Modify Run Configuration for the whole file: the node itself has no
+  location URL (a double-click toggles it), so the platform builds no entries
+  there and the plugin supplies them. A file node without cases keeps its URL
+  and the platform's own entries (see *Files without cases*).
 - **A run configuration** — type *LuaUnit*. Its settings are the interpreter,
   the working directory (the project root by default), read-only test manifest,
   interpreter arguments and environment variables. Create it from the gutter,
