@@ -192,6 +192,12 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
                 if (line < 1) {
                     continue
                 }
+                if (case.fileLevel) {
+                    // The file's own failure: the hint goes to the first line,
+                    // to the right of whatever it holds.
+                    sites.add(Site(line, textFor(case), case))
+                    continue
+                }
                 if (LuaUnitFailureInlayHints.isDataRow(file, document, case)) {
                     sites.add(Site(line, textFor(case), case))
                 } else if (line != case.declarationLine) {
@@ -406,6 +412,12 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
             document: com.intellij.openapi.editor.Document,
             failure: LuaUnitRunIndex.CaseResult
         ): Int {
+            // A failure of the file itself (a load error, a plain script that
+            // threw) has no declaration to point at: the first line of the
+            // file is the place it belongs to.
+            if (failure.fileLevel) {
+                return if (document.lineCount >= 1) 1 else 0
+            }
             if (failure.declarationLine < 1 || failure.declarationLine > document.lineCount) {
                 return 0
             }

@@ -71,6 +71,13 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
          * result belongs on it.
          */
         var setup: Boolean = false
+        /**
+         * The record stands for the file itself, not for a case: a plain
+         * script the runner executes while loading. It has no declaration of
+         * its own — its fixtures and a load failure belong to the first line
+         * of the file.
+         */
+        var fileLevel: Boolean = false
         var fixtures: MutableList<String> = ArrayList()
 
         /** Where the run failed: the assertion line of the trace and its message. */
@@ -270,6 +277,13 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
     }
 
     companion object {
+        /**
+         * The case name of the record that stands for the whole file (a plain
+         * script, a file that failed to load). No LuaUnit case can carry it:
+         * a real name never contains a NUL.
+         */
+        const val FILE_RECORD: String = "\u0000file"
+
         fun getInstance(project: Project): LuaUnitRunIndex =
             project.getService(LuaUnitRunIndex::class.java)
 

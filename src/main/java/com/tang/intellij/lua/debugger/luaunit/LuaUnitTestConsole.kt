@@ -693,9 +693,17 @@ class LuaUnitTestConsole(
             // icon on a fully green group.
             val sectionChildren = ArrayList<SMTestProxy>()
             for (suite in group.suites) {
-                // No location URL on the file node: a double-click on it
-                // toggles the node, the way the user expects it to.
-                val suiteNode = SMTestProxy(suite.displayName, true, null)
+                // No location URL on a file node that has cases: a double-click
+                // on it toggles the node, the way the user expects it to. A
+                // file without a single case (a plain script the runner
+                // executes on load) has nothing to toggle: the click opens the
+                // file at its first line instead.
+                val suiteUrl = if (suite.cases.isEmpty()) {
+                    "file:///" + absolutePathOf(suite.file).trimStart('/') + ":1"
+                } else {
+                    null
+                }
+                val suiteNode = SMTestProxy(suite.displayName, true, suiteUrl)
                 suiteNode.setLocator(LuaUnitTestLocator())
                 // The node shows the file's own name with its counter: the
                 // section already says which directory it lives in.
@@ -937,6 +945,11 @@ class LuaUnitTestConsole(
     }
 
     private fun onSuiteFailureNow(suite: LuaUnitSuite, failure: LuaUnitProtocol.Failure) {
+        // The failure belongs to the file: no case was open when it happened
+        // (a missing module, a syntax error, a plain script that threw while
+        // loading). The tree shows it on the file's node; the editor marks it
+        // on the first line of the file — see [LuaUnitFailureInlayHints].
+        rememberFileFailure(suite, failure)
         val node = suite.proxy ?: return
         // The message is the node's own: a double-click still goes to the
         // file, not to the failing line of the runner.
@@ -1210,6 +1223,76 @@ class LuaUnitTestConsole(
         result.failed = false
         result.comparison = false
         result.fixtures = fixtures.mapNotNull { resolveFixture(it) }.distinct().toMutableList()
+    }
+
+    /**
+     * The record of the file itself: what it read while loading, and whether
+     * it finished at all. A plain script — a file without a single test
+     * function — runs entirely on load, and its fixtures and its result used
+     * to be dropped: no case ever reported for it.
+     *
+     * <p>[completed] is the runner's own DONE marker: a file that was stopped
+     * before it reported its end gets no green record (a colour would claim a
+     * result that never came), unless its load fixtures are worth showing.
+     */
+    fun onFileFinished(
+        suite: LuaUnitSuite,
+        fixtures: List<String>,
+        completed: Boolean
+    ) = synchronized(lock) {
+        nowOrDefer { rememberFileFinished(suite, fixtures, completed) }
+    }
+
+    private fun rememberFileFinished(suite: LuaUnitSuite, fixtures: List<String>, completed: Boolean) {
+        // A suite with cases is coloured by its cases; the file record is only
+        // for the things that have no case — the load fixtures of any file and
+        // the result of a plain script.
+        val worth = fixtures.isNotEmpty() || (completed && suite.cases.isEmpty())
+        if (!worth) {
+            return
+        }
+        val result = fileRecord(suite)
+        result.fixtures = fixtures.mapNotNull { resolveFixture(it) }.distinct().toMutableList()
+    }
+
+    /**
+     * The record of a file that failed before any case could start. It keeps
+     * the message, the comparison (when the failure carried one) and the first
+     * line as the place the editor marks.
+     */
+    private fun rememberFileFailure(suite: LuaUnitSuite, failure: LuaUnitProtocol.Failure) {
+        val result = fileRecord(suite)
+        result.failed = true
+        result.comparison = failure.expected != null && failure.actual != null
+        result.message = limit(failure.message)
+        result.expected = failure.expected?.let { limit(it) }
+        result.actual = failure.actual?.let { limit(it) }
+        result.errorFile = result.declarationFile
+        result.errorLine = 1
+        result.errorText = lineTextOf(result.declarationFile, 1)
+    }
+
+    /**
+     * The record that stands for the whole file: [LuaUnitRunIndex.FILE_RECORD],
+     * marked as such, declared on the first line. It is created once per file
+     * and then only updated — the load fixtures and a load failure arrive as
+     * separate events.
+     */
+    private fun fileRecord(suite: LuaUnitSuite): LuaUnitRunIndex.CaseResult {
+        val testFile = LuaUnitRunIndex.canonical(absolutePathOf(suite.file))
+        val result = runResults.getOrPut(key(testFile, LuaUnitRunIndex.FILE_RECORD)) {
+            LuaUnitRunIndex.CaseResult()
+        }
+        result.testFile = testFile
+        result.caseName = LuaUnitRunIndex.FILE_RECORD
+        if (result.displayName.isEmpty()) {
+            result.displayName = suite.file.fileName.toString()
+        }
+        result.fileLevel = true
+        result.declarationFile = testFile
+        result.declarationLine = 1
+        result.line = 1
+        return result
     }
 
     /** The line of `function <className>:setUp(` in the suite's file, or null. */
