@@ -24,6 +24,11 @@ Everything in this repository is done in **English**:
   with its dependencies; a locally installed IDE has a different build and its
   artifacts are usually not cached. `-x bunch` is mandatory — `bunch` resets the
   working tree.
+- When both targets are built, build **2026.2 first and 2025.3 last**: the
+  build outputs (classes, jars, patched `plugin.xml`) are shared between the
+  versions, and the last build decides what `runIde` / `build/runit` sees as
+  up to date. Ending on 2025.3 keeps the sandbox start from recompiling; the
+  reverse order makes `build/runit` rebuild before every start.
 - Releasing (version bump, both artifacts, tag, GitHub release) is described in
   the `release` skill.
 - After building the plugin for a piece of work, **launch the sandbox** so the

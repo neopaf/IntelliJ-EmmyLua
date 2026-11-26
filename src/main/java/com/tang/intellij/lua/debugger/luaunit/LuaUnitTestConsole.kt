@@ -96,6 +96,16 @@ class LuaUnitTestConsole(
 
     private val caseProxies = ConcurrentHashMap<String, SMTestProxy>()
 
+    /**
+     * The tree text of a case: its own name and the description the tree shows
+     * grey to the right of it. The proxy keeps the name WITH the description in
+     * parentheses — the tests tree's speed search matches that text — while the
+     * renderer paints the two parts apart (see [LuaUnitHiddenIgnoredRenderer]).
+     */
+    private val caseTexts = java.util.Collections.synchronizedMap(
+        java.util.IdentityHashMap<SMTestProxy, LuaUnitHiddenIgnoredRenderer.CaseText>()
+    )
+
     @Volatile
     private var root: SMTestProxy.SMRootTestProxy? = null
 
@@ -227,7 +237,9 @@ class LuaUnitTestConsole(
         for (tree in testTrees) {
             val current = tree.cellRenderer ?: continue
             if (current !is LuaUnitHiddenIgnoredRenderer) {
-                tree.cellRenderer = LuaUnitHiddenIgnoredRenderer(current, properties)
+                tree.cellRenderer = LuaUnitHiddenIgnoredRenderer(current, properties) { proxy ->
+                    caseTexts[proxy]
+                }
                 tree.repaint()
             }
         }
@@ -892,6 +904,11 @@ class LuaUnitTestConsole(
             if (case.description.isBlank()) case.displayName
             else "${case.displayName} (${case.description})"
         )
+        if (case.description.isNotBlank()) {
+            // The tree paints the description grey instead of the parentheses
+            // of the proxy name; the name itself stays searchable with it.
+            caseTexts[caseProxy] = LuaUnitHiddenIgnoredRenderer.CaseText(case.displayName, case.description)
+        }
         LuaUnitCopyTestNameAction.remember(caseProxy, case)
         if (case.ignored) {
             // A commented-out case: no run. The tree paints it as ignored by
