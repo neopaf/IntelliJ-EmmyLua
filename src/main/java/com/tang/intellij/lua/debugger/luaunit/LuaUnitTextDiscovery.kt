@@ -25,8 +25,9 @@ import java.nio.file.Path
  * <p>A case stays a case when it is commented out: every `-- id = 'x'` row and
  * every `--[[ function TestSuite:test_x() ... ]]` block is discovered as an
  * ignored case. The free `-- ...` lines that explain it (directly above the
- * declaration, above the row's `{`, or above the `--[[` opener — shared by
- * every case of that block) become the case's description.
+ * declaration, above the row's `{`, above the row's `id`/`desc` field, or above
+ * the `--[[` opener — shared by every case of that block) become the case's
+ * description, joined with "; " when there are several.
  */
 object LuaUnitTextDiscovery {
 
@@ -333,7 +334,7 @@ object LuaUnitTextDiscovery {
         var depth = 0
         var current: String? = null
         var currentIgnored = false
-        var currentDescription = ""
+        var currentParts = ArrayList<String>()
         var currentLine = 0
         var currentIdLine = 0
         var openLine = 0
@@ -353,7 +354,8 @@ object LuaUnitTextDiscovery {
                         if (depth == 2) {
                             current = null
                             currentIgnored = commented
-                            currentDescription = ""
+                            // The free comments above the `{` explain the row.
+                            currentParts = ArrayList(commentsAbove(lines, line))
                             currentLine = line
                             currentIdLine = 0
                             openLine = line
@@ -361,7 +363,8 @@ object LuaUnitTextDiscovery {
                     }
                     '}' -> {
                         if (depth == 2 && current != null) {
-                            result.add(Row(current, currentLine + base, currentIgnored, currentDescription,
+                            result.add(Row(current, currentLine + base, currentIgnored,
+                                currentParts.distinct().joinToString("; "),
                                 if (currentIdLine == 0) currentLine + base else currentIdLine + base))
                             current = null
                         }
@@ -384,16 +387,21 @@ object LuaUnitTextDiscovery {
                     // the generator loop names the case by the desc.
                     val isDesc = body.trimStart().startsWith("desc")
                     if (current == null || isDesc) {
-                        // The trailing comment of the row, or the free comment
-                        // lines above the `{` the row opened with (a commented
-                        // row opens with "--{" and its explanation sits above
-                        // that line, never on it).
-                        var description = if (comment >= 0) code.substring(comment + 2).trim() else ""
-                        if (description.isBlank()) {
-                            description = commentsAbove(lines, openLine).joinToString("; ")
+                        // The explanation of the row: the free comment lines
+                        // above the `{` it opens with, the `-- ...` line above
+                        // its `id`/`desc` field (a row may name itself on a
+                        // line of its own), and the trailing comment of that
+                        // line. Several parts are joined with "; ".
+                        if (line != openLine) {
+                            currentParts.addAll(commentsAbove(lines, line))
+                        }
+                        if (comment >= 0) {
+                            val trailing = code.substring(comment + 2).trim()
+                            if (trailing.isNotEmpty()) {
+                                currentParts.add(trailing)
+                            }
                         }
                         current = pair.groupValues[1]
-                        currentDescription = description
                         currentLine = line
                         if (!isDesc) {
                             currentIdLine = line
@@ -409,7 +417,9 @@ object LuaUnitTextDiscovery {
         val name: String,
         val line: Int,
         val ignored: Boolean = false,
-        /** The explanation of the row: its trailing comment or the lines above it. */
+        /** The explanation of the row: the lines above its `{`, the `-- ...`
+         *  line above its `id`/`desc` field and the trailing comment, joined
+         *  with "; ". */
         val description: String = "",
         /** The row's own `id = ...` line (the desc may sit elsewhere): the
          *  gutter marker of the case sits on this line. */
