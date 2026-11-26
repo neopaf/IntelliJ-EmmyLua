@@ -19,7 +19,10 @@ package com.tang.intellij.lua.debugger.luaunit
 import com.intellij.codeInsight.daemon.impl.InlayHintsPassFactoryInternal
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.EditorNotifications
+import java.awt.Component
+import java.awt.Container
 
 /**
  * Everything a run paints in the editor — the code vision of a case, the inlay
@@ -78,7 +81,52 @@ object LuaUnitHighlights {
             // already built: without a refresh the tint of a file appears only
             // when the node is rebuilt for another reason (a click on it).
             com.intellij.ide.projectView.ProjectView.getInstance(project)?.refresh()
+            // The Structure tool window rebuilds only on PSI events, and a run
+            // changes no PSI: its test nodes would keep the previous run's
+            // icons. Rebuild the structure components of the tool window.
+            rebuildStructureView(project)
             log.info("highlights refreshed ($reason) in ${System.currentTimeMillis() - started} ms")
         }
     }
+
+    /**
+     * Rebuilds the structure views of the Structure tool window.
+     *
+     * <p>The platform keeps a built structure view until the PSI of its file
+     * changes; it subscribes to nothing else. A run publishes its results into
+     * [LuaUnitRunIndex] without touching the PSI, so the test icons of the
+     * nodes keep the previous run's state. The component's own `rebuild` is
+     * called through reflection on purpose: the class lives in the core of
+     * IDEA 2025.3 but in the `platform-structureView` plugin of IDEA 2026.2,
+     * where a compile-time reference would not resolve.
+     */
+    private fun rebuildStructureView(project: Project) {
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Structure") ?: return
+        val root = toolWindow.component ?: return
+        rebuildStructureComponents(root)
+    }
+
+    private fun rebuildStructureComponents(component: Component?) {
+        if (component == null) {
+            return
+        }
+        if (component.javaClass.name == STRUCTURE_VIEW_COMPONENT) {
+            try {
+                component.javaClass.getMethod("rebuild").invoke(component)
+            } catch (e: Exception) {
+                com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
+                    .warn("structure view rebuild failed: ${e.message}")
+            }
+            return
+        }
+        if (component is Container) {
+            for (child in component.components) {
+                rebuildStructureComponents(child)
+            }
+        }
+    }
+
+    /** The platform's structure view component of both supported IDEA lines. */
+    private const val STRUCTURE_VIEW_COMPONENT =
+        "com.intellij.ide.structureView.newStructureView.StructureViewComponent"
 }

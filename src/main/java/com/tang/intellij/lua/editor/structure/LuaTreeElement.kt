@@ -16,6 +16,7 @@
 
 package com.tang.intellij.lua.editor.structure
 
+import com.intellij.ide.structureView.SearchableTextProvider
 import com.intellij.ide.structureView.StructureViewTreeElement
 import com.intellij.ide.util.treeView.smartTree.TreeElement
 import com.intellij.navigation.ItemPresentation
@@ -30,7 +31,7 @@ open class LuaTreeElement(
     val element: NavigationItem,
     var name: String,
     var icon: Icon
-) : StructureViewTreeElement {
+) : StructureViewTreeElement, SearchableTextProvider {
     var parent: LuaTreeElement? = null
     private val children = LinkedHashMap<String, LuaTreeElement>()
 
@@ -49,6 +50,15 @@ open class LuaTreeElement(
 
     open fun getPresentableText(): String? {
         return name
+    }
+
+    /**
+     * The text the structure view's incremental search matches: the name and,
+     * when there is one, the description, so a case is found by either.
+     */
+    override fun getSearchableText(): String {
+        val note = location
+        return if (note.isNullOrEmpty()) name else "$name $note"
     }
 
     override fun getValue(): Any {

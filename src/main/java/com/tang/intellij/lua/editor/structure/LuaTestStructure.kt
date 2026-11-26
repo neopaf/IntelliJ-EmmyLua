@@ -16,9 +16,13 @@
 
 package com.tang.intellij.lua.editor.structure
 
+import com.intellij.execution.testframework.PoolOfTestIcons
 import com.intellij.icons.AllIcons
+import com.tang.intellij.lua.debugger.luaunit.LuaUnitHighlights
+import com.tang.intellij.lua.debugger.luaunit.LuaUnitRunIndex
 import com.tang.intellij.lua.debugger.luaunit.LuaUnitTestCaseLookup
 import com.tang.intellij.lua.psi.LuaPsiFile
+import javax.swing.Icon
 
 /**
  * The LuaUnit cases of a file, drawn into its structure view.
@@ -46,6 +50,16 @@ internal object LuaTestStructure {
         val current = file.virtualFile?.path?.let {
             java.nio.file.Path.of(it).toAbsolutePath().normalize()
         }
+        // The last run's results: the case icons repeat the tests tree — a
+        // tick, the failed cross of an assertion, the error circle. Nothing of
+        // the previous run is shown while a run is in progress.
+        val results = if (LuaUnitHighlights.isRunning() || current == null) {
+            emptyList()
+        } else {
+            LuaUnitRunIndex.getInstance(file.project).casesDeclaredIn(current.toString())
+        }
+        // The case nodes and their states, for the aggregate icon of a suite.
+        val caseStates = LinkedHashMap<LuaTreeElement, MutableList<State>>()
         // The case lines of this file are the only positions comparable with
         // the offsets of the PSI nodes. A case declared in another file (a data
         // row of a generated case in a suite) gets a place after the file's own
@@ -53,18 +67,25 @@ internal object LuaTestStructure {
         val starts = lineStarts(text)
         val afterFile = text.length + 1
         for (entry in entries) {
+            val state = stateOf(entry, results)
             if (!entry.generated) {
                 val node = functionNode(children, entry)
                 if (node != null) {
-                    node.icon = AllIcons.Nodes.Test
+                    node.icon = state?.let { iconOf(it) } ?: AllIcons.Nodes.Test
                     node.location = noteOf(entry)
+                    state?.let { caseStates.getOrPut(node) { ArrayList() }.add(it) }
                     continue
                 }
             }
             val ownLine = entry.file == current
             val offset = if (ownLine) lineStart(starts, entry.line) else afterFile + entry.line
             val element = LuaTestCaseElement(
-                file.project, entry.file, entry.line, entry.shortName, noteOf(entry)
+                file.project,
+                entry.file,
+                entry.line,
+                entry.shortName,
+                noteOf(entry),
+                state?.let { iconOf(it) } ?: AllIcons.Nodes.Test
             )
             // The offset, not the line number: the sorter compares it with the
             // offsets the PSI nodes carry.
@@ -76,9 +97,55 @@ internal object LuaTestStructure {
             } else {
                 topLevel.add(element)
             }
+            state?.let { caseStates.getOrPut(element) { ArrayList() }.add(it) }
+        }
+        // A suite node takes the state of its cases, the way the run tree
+        // paints a suite: the worst failure wins.
+        for (owner in caseStates.keys.mapNotNull { it.parent }.distinct()) {
+            val states = caseStates.filterKeys { it.parent === owner }.values.flatten()
+            aggregate(states)?.let { owner.icon = iconOf(it) }
         }
         return topLevel
     }
+
+    /** The result of a case in the last run: the ignored mark before any run. */
+    private fun stateOf(
+        entry: LuaUnitTestCaseLookup.Entry,
+        results: List<LuaUnitRunIndex.CaseResult>
+    ): State? {
+        if (entry.ignored) {
+            return State.IGNORED
+        }
+        val result = results.firstOrNull {
+            !it.setup && !it.fileLevel &&
+                it.caseName == entry.name && it.declarationLine == entry.line
+        } ?: return null
+        return when {
+            !result.failed -> State.PASSED
+            !result.comparison -> State.ERROR
+            else -> State.FAILED
+        }
+    }
+
+    /** The state of a suite: a failure of any kind beats a pass. */
+    private fun aggregate(states: List<State>): State? = when {
+        states.any { it == State.ERROR } -> State.ERROR
+        states.any { it == State.FAILED } -> State.FAILED
+        states.any { it == State.PASSED } -> State.PASSED
+        states.isNotEmpty() -> State.IGNORED
+        else -> null
+    }
+
+    /** The very icons the run tree paints for the states of a case. */
+    private fun iconOf(state: State): Icon = when (state) {
+        State.PASSED -> PoolOfTestIcons.PASSED_ICON
+        State.FAILED -> PoolOfTestIcons.FAILED_ICON
+        State.ERROR -> PoolOfTestIcons.ERROR_ICON
+        State.IGNORED -> PoolOfTestIcons.IGNORED_ICON
+    }
+
+    /** How a case ended: the same states the tests tree draws. */
+    private enum class State { PASSED, FAILED, ERROR, IGNORED }
 
     /** True when the file has at least one case the structure view can show. */
     fun hasTests(file: LuaPsiFile): Boolean {
@@ -90,13 +157,9 @@ internal object LuaTestStructure {
         }
     }
 
-    /** The note to show to the right of a case: its description, and the ignored mark. */
-    private fun noteOf(entry: LuaUnitTestCaseLookup.Entry): String? = when {
-        entry.ignored && entry.description.isNotEmpty() -> "ignored \u00b7 ${entry.description}"
-        entry.ignored -> "ignored"
-        entry.description.isNotEmpty() -> entry.description
-        else -> null
-    }
+    /** The note to show to the right of a case: its description, when it has one. */
+    private fun noteOf(entry: LuaUnitTestCaseLookup.Entry): String? =
+        entry.description.ifEmpty { null }
 
     /** The node of a declared case: the function under its suite table. */
     private fun functionNode(children: List<LuaTreeElement>, entry: LuaUnitTestCaseLookup.Entry): LuaTreeElement? {
