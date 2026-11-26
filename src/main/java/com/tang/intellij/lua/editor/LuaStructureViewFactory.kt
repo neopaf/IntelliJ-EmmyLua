@@ -29,6 +29,8 @@ import com.tang.intellij.lua.LuaBundle
 import com.tang.intellij.lua.editor.structure.LuaClassFieldElement
 import com.tang.intellij.lua.editor.structure.LuaFileElement
 import com.tang.intellij.lua.editor.structure.LuaFuncElement
+import com.tang.intellij.lua.editor.structure.LuaTestStructure
+import com.tang.intellij.lua.editor.structure.LuaTreeElement
 import com.tang.intellij.lua.psi.LuaPsiFile
 
 /**
@@ -48,7 +50,14 @@ class LuaStructureViewFactory : PsiStructureViewFactory {
     inner class LuaStructureViewModel(psiFile: PsiFile) : StructureViewModelBase(psiFile, LuaFileElement(psiFile as LuaPsiFile)), StructureViewModel.ElementInfoProvider {
 
         init {
-            withSorters(LuaAlphaSorter())
+            // A file of LuaUnit cases follows the order of its lines — the run
+            // tree shows the cases the same way, and the alphabet would mix the
+            // data rows up. Every other file keeps the alphabetical order.
+            if (LuaTestStructure.hasTests(psiFile as LuaPsiFile)) {
+                withSorters(LuaFileOrderSorter(), LuaAlphaSorter())
+            } else {
+                withSorters(LuaAlphaSorter())
+            }
         }
 
         override fun isAlwaysShowsPlus(structureViewTreeElement: StructureViewTreeElement): Boolean {
@@ -86,6 +95,36 @@ class LuaStructureViewFactory : PsiStructureViewFactory {
 
         override fun getName(): String {
             return "Alpha Sorter"
+        }
+    }
+
+    /**
+     * The order of the file, by the character offset of each node. A node with
+     * no PSI of its own (a LuaUnit case built from a data row) carries the
+     * offset of its line.
+     */
+    inner class LuaFileOrderSorter : Sorter {
+
+        override fun getComparator() = kotlin.Comparator<Any> { o1, o2 ->
+            val first = (o1 as? LuaTreeElement)?.lineOrder ?: 0
+            val second = (o2 as? LuaTreeElement)?.lineOrder ?: 0
+            first.compareTo(second)
+        }
+
+        override fun isVisible(): Boolean {
+            return true
+        }
+
+        override fun getPresentation(): ActionPresentation {
+            return ActionPresentationData(
+                "Sort by Position",
+                "Sort by Position in File",
+                AllIcons.ObjectBrowser.Sorted
+            )
+        }
+
+        override fun getName(): String {
+            return "File Order Sorter"
         }
     }
 }

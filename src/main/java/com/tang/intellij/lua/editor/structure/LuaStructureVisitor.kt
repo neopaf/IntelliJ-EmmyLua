@@ -51,6 +51,15 @@ private class LexicalContext(val element: LuaTreeElement? = null, val parent: Le
 class LuaStructureVisitor : LuaVisitor() {
     private var current: LexicalContext? = LexicalContext()
 
+    /**
+     * The table expressions the view shows as nodes, with their spans: a
+     * generated case is placed under the table its row belongs to (the view has
+     * no PSI node for the row itself).
+     */
+    private val tableSpans = ArrayList<Triple<Int, Int, LuaTreeElement>>()
+
+    fun getTableSpans(): List<Triple<Int, Int, LuaTreeElement>> = tableSpans
+
     private fun pushContext(e: LuaTreeElement, addChild: Boolean = true) {
         current = current?.addChildContext(e, addChild)
     }
@@ -194,6 +203,7 @@ class LuaStructureVisitor : LuaVisitor() {
     }
 
     private fun handleTableExpr(o: LuaTableExpr, exprOwner: LuaTreeElement) {
+        tableSpans.add(Triple(o.textRange.startOffset, o.textRange.endOffset, exprOwner))
         o.tableFieldList.forEach { tableField ->
             val name = tableField.name
 
