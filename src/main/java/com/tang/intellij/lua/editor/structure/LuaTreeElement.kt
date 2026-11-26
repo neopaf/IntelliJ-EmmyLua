@@ -20,14 +20,32 @@ import com.intellij.ide.structureView.StructureViewTreeElement
 import com.intellij.ide.util.treeView.smartTree.TreeElement
 import com.intellij.navigation.ItemPresentation
 import com.intellij.navigation.NavigationItem
+import com.intellij.psi.PsiElement
 import javax.swing.Icon
 
 /**
  * Created by TangZX on 2016/12/28.
  */
-open class LuaTreeElement(val element: NavigationItem, var name: String, val icon: Icon) : StructureViewTreeElement {
+open class LuaTreeElement(
+    val element: NavigationItem,
+    var name: String,
+    var icon: Icon
+) : StructureViewTreeElement {
     var parent: LuaTreeElement? = null
     private val children = LinkedHashMap<String, LuaTreeElement>()
+
+    /**
+     * The note shown to the right of the name: a test case's description, or
+     * the "ignored" mark of a commented-out case. Null keeps the line empty.
+     */
+    var location: String? = null
+
+    /**
+     * The position of the node in the file, in characters: the key of the
+     * file-order sorter. A node of the PSI takes the offset of its element, a
+     * case with no PSI in this file (a generated one) sets its own.
+     */
+    var lineOrder: Int = (element as? PsiElement)?.textRange?.startOffset ?: 0
 
     open fun getPresentableText(): String? {
         return name
@@ -44,7 +62,7 @@ open class LuaTreeElement(val element: NavigationItem, var name: String, val ico
             }
 
             override fun getLocationString(): String? {
-                return null
+                return this@LuaTreeElement.location
             }
 
             override fun getIcon(b: Boolean): Icon? {

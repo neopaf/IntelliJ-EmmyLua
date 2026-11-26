@@ -17,6 +17,7 @@
 package com.tang.intellij.lua.editor.structure
 
 import com.intellij.ide.util.treeView.smartTree.TreeElement
+import com.tang.intellij.lua.debugger.luaunit.LuaUnitTestCaseLookup
 import com.tang.intellij.lua.lang.LuaIcons
 import com.tang.intellij.lua.psi.*
 
@@ -31,6 +32,28 @@ class LuaFileElement(private val file: LuaPsiFile) : LuaTreeElement(file, file.n
 
         visitor.compressChildren()
 
-        return visitor.getChildren()
+        val children = visitor.getChildren()
+        val path = file.virtualFile?.path
+        if (path == null) {
+            return children
+        }
+        // The LuaUnit cases of the file, found from the manifest and the texts
+        // (nothing is run): a declared case takes the test icon, a generated or
+        // commented-out one gets a node of its own.
+        val entries = try {
+            LuaUnitTestCaseLookup.entriesOf(java.nio.file.Path.of(path))
+        } catch (e: Exception) {
+            emptyList()
+        }
+        if (entries.isEmpty()) {
+            return children
+        }
+        val topLevel = LuaTestStructure.decorate(
+            file,
+            children.filterIsInstance<LuaTreeElement>(),
+            visitor.getTableSpans(),
+            entries
+        )
+        return (children.toList() + topLevel).toTypedArray()
     }
 }
