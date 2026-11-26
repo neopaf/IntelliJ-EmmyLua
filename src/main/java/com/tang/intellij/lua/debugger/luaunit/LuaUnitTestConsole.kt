@@ -750,7 +750,7 @@ class LuaUnitTestConsole(
                 val owners = LinkedHashSet<String>()
                 val firstTestLine = HashMap<String, Int>()
                 for (case in discovered) {
-                    val owner = ownerOf(case.name)
+                    val owner = ownerOf(case)
                     if (owner.isEmpty()) {
                         continue
                     }
@@ -764,7 +764,7 @@ class LuaUnitTestConsole(
                 val grouped = owners.size > 1
                 val byOwner = LinkedHashMap<String, MutableList<LuaUnitNode.Case>>()
                 for (case in suite.cases) {
-                    byOwner.getOrPut(ownerOf(case.name)) { ArrayList() }.add(case)
+                    byOwner.getOrPut(ownerOf(case)) { ArrayList() }.add(case)
                 }
                 // A plain global test belongs to no table: it stays on the file.
                 for (case in byOwner[""].orEmpty()) {
@@ -847,8 +847,10 @@ class LuaUnitTestConsole(
     private fun suiteById(name: String): LuaUnitSuite? = suites.firstOrNull { it.key == name }
 
     /** The suite table a case is declared on: "ABCGroup" for
-      * "ABCGroup.test_x", an empty string for a plain global test. */
-    private fun ownerOf(caseName: String): String = caseName.substringBeforeLast('.', "")
+      * "ABCGroup.test_x", an empty string for a plain global test. The owner is
+      * read from the case itself: a generated case's name may contain dots of
+      * its own, so "the text before the last dot" is not the owner there. */
+    private fun ownerOf(case: LuaUnitNode.Case): String = case.owner
 
     /** Every case the discovery found for [suite]'s file, not the run's subset. */
     private fun discoveredCases(suite: LuaUnitSuite): List<LuaUnitNode.Case> {

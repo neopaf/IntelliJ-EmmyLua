@@ -106,11 +106,13 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
             return listOf(LuaUnitNode.Case(file.toString(), "Discovery failed", null))
         }
         return cases.map { item ->
-            val dot = item.name.lastIndexOf('.')
-            val displayName = if (dot >= 0) item.name.substring(dot + 1) else item.name
+            // The case's own name comes from the parser, not from cutting the
+            // full name at a dot: a generated case's row may itself contain
+            // dots (`1.1.1 ... bypass.mode=full`), and the last one would have
+            // cut away the beginning of the name.
             LuaUnitNode.Case(
-                item.name, displayName(displayName), LuaUnitProtocol.parseSource(item.source),
-                item.ignored, item.description, item.idLine > 0
+                item.name, displayName(item.shortName), LuaUnitProtocol.parseSource(item.source),
+                item.ignored, item.description, item.idLine > 0, item.owner
             )
         }
     }

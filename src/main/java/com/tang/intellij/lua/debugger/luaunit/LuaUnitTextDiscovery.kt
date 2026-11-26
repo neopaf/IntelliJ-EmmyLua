@@ -54,13 +54,22 @@ object LuaUnitTextDiscovery {
      *  are commented out and shown as ignored in the tree. */
     data class Case(
         val name: String,
+        /** The case's own name: the [name] without its [owner]. A generated
+         *  case takes it from the loop's prefix and the data row, never cut at
+         *  a dot — a row's `id` may contain dots of its own
+         *  (`1.1.1 ... bypass.mode=full`), and a cut at the last dot would
+         *  show only the tail of it. */
+        val shortName: String,
         val source: String,
         val ignored: Boolean = false,
         /** The `-- ...` lines above the declaration, joined with "; ". */
         val description: String = "",
         /** The row's `id = ...` line of a generated case: the gutter marker
          *  sits there (the [source] may point at the desc line instead). */
-        val idLine: Int = 0
+        val idLine: Int = 0,
+        /** The table the case is declared on (`TestSuite`, `M.Suite`): empty
+         *  for a plain global test and for a global generator. */
+        val owner: String = ""
     )
 
     /**
@@ -134,9 +143,11 @@ object LuaUnitTextDiscovery {
             result.add(
                 Case(
                     name,
+                    name.substringAfterLast('.'),
                     "${file.toAbsolutePath().normalize()}:$line",
                     false,
-                    commentsAbove(lines, line).joinToString("; ")
+                    commentsAbove(lines, line).joinToString("; "),
+                    owner = name.substringBeforeLast('.', "")
                 )
             )
         }
@@ -155,9 +166,11 @@ object LuaUnitTextDiscovery {
                 result.add(
                     Case(
                         name,
+                        name.substringAfterLast('.'),
                         "${file.toAbsolutePath().normalize()}:$line",
                         true,
-                        description
+                        description,
+                        owner = name.substringBeforeLast('.', "")
                     )
                 )
             }
@@ -202,10 +215,12 @@ object LuaUnitTextDiscovery {
             // LuaUnit runs a single test — the tree keeps exactly that node.
             generated[caseName] = Case(
                 caseName,
+                "$prefix$rowName",
                 "${dataFile.toAbsolutePath().normalize()}:${row.line}",
                 row.ignored,
                 row.description,
-                row.idLine
+                row.idLine,
+                if (suite == "_G") "" else suite
             )
         }
         result.addAll(generated.values)
