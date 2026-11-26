@@ -73,7 +73,12 @@ sealed class LuaUnitNode {
         val description: String = "",
         /** Built in a loop from a data row: the declaration is the row, not a
          *  function, so its failures belong to the row of the data table. */
-        val generated: Boolean = false
+        val generated: Boolean = false,
+        /** The table the case is declared on (`Suite`, `M.Suite`), empty for a
+         *  plain global test. Kept apart from [name] on purpose: a generated
+         *  case's name may contain dots of its own, so the owner cannot be
+         *  recovered by cutting the name at a dot. */
+        val owner: String = ""
     ) : LuaUnitNode()
 
     /** A `file:line` pair a case (or a fixture) points at. */
