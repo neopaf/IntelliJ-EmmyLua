@@ -44,6 +44,29 @@ class LuaStructureViewFactory : PsiStructureViewFactory {
             override fun createStructureViewModel(editor: Editor?): StructureViewModel {
                 return LuaStructureViewModel(psiFile)
             }
+
+            override fun createStructureView(fileEditor: com.intellij.openapi.fileEditor.FileEditor?, project: com.intellij.openapi.project.Project): StructureView {
+                val view = super.createStructureView(fileEditor, project)
+                // The tree of the created view is reached by name: the
+                // component lives in the core of IDEA 2025.3 and in the
+                // `platform-structureView` plugin of IDEA 2026.2, where a
+                // compile-time reference would not resolve.
+                val tree = try {
+                    view.javaClass.getMethod("getTree").invoke(view) as? javax.swing.JTree
+                } catch (e: Exception) {
+                    null
+                }
+                if (tree != null) {
+                    // IDEA 2026.2 opens the test suites on its own; 2025.3
+                    // leaves them collapsed, with the cases hidden. A file of
+                    // LuaUnit cases opens its suites so the cases are visible
+                    // at once, without a click.
+                    if (psiFile is LuaPsiFile && LuaTestStructure.hasTests(psiFile)) {
+                        com.intellij.util.ui.tree.TreeUtil.promiseExpandAll(tree)
+                    }
+                }
+                return view
+            }
         }
     }
 
