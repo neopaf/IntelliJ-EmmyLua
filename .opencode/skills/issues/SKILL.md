@@ -1,6 +1,6 @@
 ---
 name: issues
-description: Use when creating, moving, closing or commenting on GitHub issues for the IntelliJ-EmmyLua plugin — which repository is ours, what to do with an issue filed in a foreign repository by mistake, how foreign repositories may be used at all, and what the approval word «хорошо» triggers.
+description: Use whenever the user says «хорошо» — that word after a report of finished work means the whole issue cycle: create the tracking issue, open it on a branch, commit, push, merge and close it. Also use when creating, moving, closing or commenting on GitHub issues for the IntelliJ-EmmyLua plugin — which repository is ours, what to do with an issue filed in a foreign repository by mistake, how foreign repositories may be used at all.
 ---
 
 # GitHub issues for this project
