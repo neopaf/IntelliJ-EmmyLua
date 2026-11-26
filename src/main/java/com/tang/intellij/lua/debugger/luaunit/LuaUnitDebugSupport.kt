@@ -91,6 +91,9 @@ object LuaUnitDebugger {
     }
 
     /** Starts the debug session that listens on [port]. */
+    // Deprecated in IDEA 2026.2; no replacement exists in 2025.3, so the
+    // common API stays for both.
+    @Suppress("DEPRECATION")
     @Throws(ExecutionException::class)
     fun startSession(environment: ExecutionEnvironment, port: Int): XDebugSession {
         return XDebuggerManager.getInstance(environment.project).startSession(

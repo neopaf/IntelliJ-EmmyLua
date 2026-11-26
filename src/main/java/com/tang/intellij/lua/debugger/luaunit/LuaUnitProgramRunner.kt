@@ -49,6 +49,9 @@ class LuaUnitProgramRunner : LuaRunner() {
                 (executorId == DefaultRunExecutor.EXECUTOR_ID || executorId == DefaultDebugExecutor.EXECUTOR_ID)
     }
 
+    // Deprecated in IDEA 2026.2; no replacement exists in 2025.3, so the
+    // common API stays for both.
+    @Suppress("DEPRECATION")
     override fun doExecute(state: RunProfileState, environment: ExecutionEnvironment): RunContentDescriptor? {
         FileDocumentManager.getInstance().saveAllDocuments()
         if (LuaUnitDebugger.isDebug(environment)) {

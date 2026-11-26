@@ -90,7 +90,7 @@ fun resolve(nameExpr: LuaNameExpr, context: SearchContext): PsiElement? {
 
     //global
     if (resolveResult == null || resolveResult is LuaNameExpr) {
-        val target = (resolveResult as? LuaNameExpr) ?: nameExpr
+        val target = resolveResult ?: nameExpr
         val refName = target.name
         val moduleName = target.moduleName ?: Constants.WORD_G
         LuaShortNamesManager.getInstance(context.project).processMembers(moduleName, refName, context, {

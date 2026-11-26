@@ -25,6 +25,9 @@ import com.intellij.psi.search.ProjectAndLibrariesScope
 import com.tang.intellij.lua.search.SearchContext
 
 class LuaFileFuzzyResolver : ILuaFileResolver {
+    // Called from resolve and completion, possibly on the EDT, while
+    // NonBlockingReadAction.executeSynchronously must run off the EDT.
+    @Suppress("DEPRECATION")
     override fun find(project: Project, shortUrl: String, extNames: Array<String>): VirtualFile? {
         val context = SearchContext.get(project)
         if (context.forStub)

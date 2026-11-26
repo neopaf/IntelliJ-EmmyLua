@@ -94,6 +94,8 @@ abstract class LuaShortNamesManager {
         return true
     }
 
+    // Delegates to the deprecated override that older subclasses may still provide.
+    @Suppress("DEPRECATION")
     open fun processClassNames(project: Project, processor: Processor<String>): Boolean {
         return processAllClassNames(project, processor)
     }
@@ -118,6 +120,8 @@ abstract class LuaShortNamesManager {
         else processMembers(type.className, memberName, context, processor)
     }
 
+    // Delegates to the deprecated override that older subclasses may still provide.
+    @Suppress("DEPRECATION")
     open fun processMembers(
         type: ITyClass,
         memberName: String,
@@ -146,6 +150,8 @@ abstract class LuaShortNamesManager {
         return true
     }
 
+    // Delegates to the deprecated override that older subclasses may still provide.
+    @Suppress("DEPRECATION")
     open fun processMembers(
         type: ITyClass,
         context: SearchContext,

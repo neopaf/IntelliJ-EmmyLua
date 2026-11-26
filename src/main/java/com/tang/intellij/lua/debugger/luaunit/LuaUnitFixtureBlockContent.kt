@@ -219,7 +219,7 @@ internal class Renderer(
             val x = targetRegion.x + cell.bounds.x
             g.color = when {
                 cell.part?.link != true -> JBColor.GRAY
-                cell.part?.muted == true -> mutedColor()
+                cell.part.muted == true -> mutedColor()
                 else -> linkColor()
             }
             g.drawString(cell.text, x, baseline(targetRegion, row))
@@ -252,7 +252,7 @@ internal class Renderer(
             ?: JBColor.BLUE
 
     /** The colour of the editor's own text: a quiet link is drawn with it. */
-    private fun mutedColor(): Color = editor.colorsScheme.defaultForeground ?: JBColor.GRAY
+    private fun mutedColor(): Color = editor.colorsScheme.defaultForeground
 
     companion object {
         private const val PREFIX = "-- "
