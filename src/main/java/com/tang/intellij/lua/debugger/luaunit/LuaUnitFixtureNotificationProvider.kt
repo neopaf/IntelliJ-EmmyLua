@@ -169,21 +169,24 @@ class LuaUnitFixtureNotificationProvider : EditorNotificationProvider {
      *
      * <p>A case of its own is shown by its name (`test_x`). A name two cases
      * share is widened by the part that tells them apart — the suite when both
-     * live in one file (`TestSuite:test_x`). When even that is shared, the
-     * file is the only thing left that does, and the entry is
-     * [Item.ambiguous].
+     * are declared in one file (`TestSuite:test_x`). Cases of different files
+     * are not such a pair: one data row read by two suites
+     * (`test_decode_ss7.lua` and `test_encode_ss7.lua`) is a single case, and
+     * the suite's name is the same on both sides, so it would tell nothing
+     * apart. When even the suite is shared within the file, the file is the
+     * only thing left that does, and the entry is [Item.ambiguous].
      *
      * <p>Two records of one file are one entry: the index may keep a file-level
      * record beside a case record, and both would paint the same name twice.
      */
     private fun itemsOf(project: Project, tests: List<LuaUnitRunIndex.CaseResult>): List<Item> {
-        val shared = tests.groupingBy { it.displayName }.eachCount()
+        val shared = tests.groupingBy { it.testFile + "\u0000" + it.displayName }.eachCount()
         val seen = HashSet<String>()
         val entries = ArrayList<Triple<LuaUnitRunIndex.CaseResult, String, String>>()
         for (test in tests) {
             val suite = test.caseName.substringBeforeLast('.', "")
             val text = when {
-                (shared[test.displayName] ?: 0) <= 1 -> test.displayName
+                (shared[test.testFile + "\u0000" + test.displayName] ?: 0) <= 1 -> test.displayName
                 suite.isEmpty() -> test.displayName
                 else -> "$suite:${test.displayName}"
             }
