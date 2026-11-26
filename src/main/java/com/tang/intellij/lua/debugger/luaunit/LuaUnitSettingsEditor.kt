@@ -53,6 +53,9 @@ class LuaUnitSettingsEditor(private val project: Project) : SettingsEditor<LuaUn
         isFocusable = false
     }
     private val extraArgs = RawCommandLineEditor()
+    // The no-argument constructor is deprecated in IDEA 2026.2 only; the
+    // project-aware one does not exist in 2025.3.
+    @Suppress("DEPRECATION")
     private val envs = EnvironmentVariablesTextFieldWithBrowseButton()
     // What the run actually narrows to, and the LuaUnit pattern of a case run:
     // a configuration created from the gutter must show both, otherwise a run

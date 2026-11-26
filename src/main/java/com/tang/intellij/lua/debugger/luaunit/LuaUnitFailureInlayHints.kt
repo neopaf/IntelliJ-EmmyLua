@@ -154,7 +154,7 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
                     factory.mouseHandling(
                         presentation,
                         object : InlayPresentationFactory.ClickListener {
-                            override fun onClick(event: MouseEvent, point: Point) {
+                            override fun onClick(event: MouseEvent, translated: Point) {
                                 openDetails(site)
                             }
                         },
@@ -331,7 +331,7 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
         private val prefixColor: java.awt.Color
         get() = com.intellij.openapi.editor.colors.EditorColorsManager.getInstance()
             .globalScheme
-            .getAttributes(com.intellij.openapi.editor.SyntaxHighlighterColors.LINE_COMMENT)
+            .getAttributes(com.intellij.openapi.editor.DefaultLanguageHighlighterColors.LINE_COMMENT)
             ?.foregroundColor
             ?: com.intellij.openapi.editor.colors.EditorColorsManager.getInstance()
                 .globalScheme.defaultForeground

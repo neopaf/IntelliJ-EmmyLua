@@ -27,9 +27,17 @@ import javax.swing.Icon
  *
  * Created by tangzx on 2016/12/24.
  */
+// SdkType still declares suggestHomePath as abstract and deprecated; the SDK
+// wizard takes the paths from suggestHomePaths, which also exists in 2025.3.
+@Suppress("OVERRIDE_DEPRECATION")
 class LuaSdkType : SdkType("Lua SDK") {
 
+    // The abstract method stays in SdkType; the wizard picks the paths up
+    // through suggestHomePaths below.
     override fun suggestHomePath() = PathEnvironmentVariableUtil.findInPath("lua")?.parent
+
+    override fun suggestHomePaths(): Collection<String> =
+        PathEnvironmentVariableUtil.findInPath("lua")?.parent?.let { listOf(it) } ?: emptyList()
 
     override fun isValidSdkHome(s: String) = true
 

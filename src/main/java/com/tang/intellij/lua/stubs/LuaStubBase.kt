@@ -42,10 +42,10 @@ abstract class LuaStubElementType<StubT : StubElement<*>, PsiT : LuaPsiElement>(
     override fun getExternalId() = "lua.${super.toString()}"
 }
 
-abstract class LuaStubBase<T : PsiElement>(parent: StubElement<*>?, type: LuaStubElementType<*, *>)
-    : StubBase<T>(parent, type) {
+abstract class LuaStubBase<T : PsiElement>(parent: StubElement<*>?, private val stubElementType: LuaStubElementType<*, *>)
+    : StubBase<T>(parent, stubElementType) {
     override fun toString(): String {
-        return "${super.toString()}($stubType)"
+        return "${super.toString()}($stubElementType)"
     }
 }
 

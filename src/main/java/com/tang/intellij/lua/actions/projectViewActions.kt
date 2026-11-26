@@ -35,7 +35,7 @@ class MarkLuaSourceRootAction : AnAction(), DumbAware {
                 LuaSourceRootManager.getInstance(project).appendRoot(file)
                 val module = event.getData(LangDataKeys.MODULE)
                 if (module != null) {
-                    ModuleRootManager.getInstance(module)?.modifiableModel?.commit()
+                    ModuleRootManager.getInstance(module).modifiableModel.commit()
                 }
             }
         }
@@ -63,7 +63,7 @@ class UnmarkLuaSourceRootAction : AnAction(), DumbAware {
                 LuaSourceRootManager.getInstance(project).removeRoot(file)
                 val module = event.getData(LangDataKeys.MODULE)
                 if (module != null) {
-                    ModuleRootManager.getInstance(module)?.modifiableModel?.commit()
+                    ModuleRootManager.getInstance(module).modifiableModel.commit()
                 }
             }
         }

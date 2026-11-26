@@ -57,6 +57,8 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
 
     override fun precomputeOnUiThread(editor: Editor) = Unit
 
+    // ReadAction.computeBlocking exists only in IDEA 2026.2.
+    @Suppress("DEPRECATION")
     override fun computeCodeVision(editor: Editor, uiData: Unit): CodeVisionState {
         val project = editor.project ?: return CodeVisionState.Ready(emptyList())
         // A run is in progress: the previous marks are already gone, and the
@@ -147,7 +149,7 @@ class LuaUnitFixtureCodeVision : CodeVisionProvider<Unit> {
         return TextRange(offset, offset)
     }
 
-    override fun handleClick(editor: Editor, range: TextRange, entry: CodeVisionEntry) {
+    override fun handleClick(editor: Editor, textRange: TextRange, entry: CodeVisionEntry) {
         // Every entry of this provider is a fixture: a click opens its file.
         openPaths(editor, entry.getUserData(FIXTURES) ?: return)
     }

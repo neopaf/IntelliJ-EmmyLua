@@ -83,7 +83,7 @@ class LuaUnitConsoleProperties(
         val virtualFile = location.virtualFile ?: return null
         val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
             .getDocument(virtualFile) ?: return null
-        val element = location.psiElement ?: return null
+        val element = location.psiElement
         val line = document.getLineNumber(element.textOffset) + 1
         val index = LuaUnitRunIndex.getInstance(project)
         val path = LuaUnitRunIndex.canonical(virtualFile.path)

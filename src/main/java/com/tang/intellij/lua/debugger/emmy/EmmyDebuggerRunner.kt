@@ -37,6 +37,9 @@ class EmmyDebuggerRunner : LuaRunner() {
         return DefaultDebugExecutor.EXECUTOR_ID == executorId && runProfile is EmmyDebugConfiguration
     }
 
+    // Deprecated in IDEA 2026.2; no replacement exists in 2025.3, so the
+    // common API stays for both.
+    @Suppress("DEPRECATION")
     override fun doExecute(state: RunProfileState, environment: ExecutionEnvironment): RunContentDescriptor {
         val manager = XDebuggerManager.getInstance(environment.project)
         val session = manager.startSession(environment, object : XDebugProcessStarter() {

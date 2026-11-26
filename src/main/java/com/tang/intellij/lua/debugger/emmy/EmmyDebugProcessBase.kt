@@ -82,7 +82,7 @@ abstract class EmmyDebugProcessBase(session: XDebugSession) : LuaDebugProcess(se
 
     override fun onDisconnect() {
         stop()
-        session?.stop()
+        session.stop()
     }
 
     override fun onReceiveMessage(cmd: MessageCMD, json: String) {

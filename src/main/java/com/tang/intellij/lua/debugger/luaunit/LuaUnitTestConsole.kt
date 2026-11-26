@@ -330,7 +330,7 @@ class LuaUnitTestConsole(
                 com.intellij.openapi.actionSystem.KeyboardShortcut(
                     javax.swing.KeyStroke.getKeyStroke(
                         java.awt.event.KeyEvent.VK_C,
-                        java.awt.Toolkit.getDefaultToolkit().menuShortcutKeyMask
+                        java.awt.Toolkit.getDefaultToolkit().menuShortcutKeyMaskEx
                     ),
                     null
                 )
@@ -372,7 +372,7 @@ class LuaUnitTestConsole(
     private fun copyableName(proxy: SMTestProxy): String {
         LuaUnitCopyTestNameAction.savedName(proxy)?.let { return it }
         suiteNodePaths[proxy]?.let { return it }
-        val shown = proxy.presentableName ?: proxy.name ?: return ""
+        val shown = proxy.presentableName
         return if (proxy.isLeaf) shown else shown.replace(Regex("""\s+\([^)]*\)$"""), "")
     }
 
@@ -438,6 +438,9 @@ class LuaUnitTestConsole(
     }
 
     /** The summary wording and the color on the status line, on the EDT. */
+    // The platform's only public check, Disposer.isDisposed, is deprecated
+    // without a public replacement (ObjectTree.isDisposed is package-private).
+    @Suppress("DEPRECATION")
     private fun showStatusLine() {
         // One write right away: the platform's final repaints of the line
         // happen around the process termination, and a long double-deferred
@@ -695,7 +698,7 @@ class LuaUnitTestConsole(
 
     // ---------------------------------------------------------------- tree
 
-    private fun buildTree(rootProxy: SMTestProxy.SMRootTestProxy) = synchronized(lock) {
+    private fun buildTree(rootProxy: SMTestProxy.SMRootTestProxy): Unit = synchronized(lock) {
         if (root != null) {
             return
         }
@@ -967,7 +970,7 @@ class LuaUnitTestConsole(
         if (node != null) {
             node.setTestIgnored(reason, "")
             // The reason goes into the tree as the case's explanation.
-            val shown = node.presentableName ?: name
+            val shown = node.presentableName
             node.setPresentableName("$shown ($reason)")
             node.setFinished()
             refreshCountsUp(node)
@@ -1137,6 +1140,8 @@ class LuaUnitTestConsole(
      * form. Resolved inside a read action: the lookup walks the project's PSI,
      * and the console events arrive on the process reader thread.
      */
+    // ReadAction.computeBlocking exists only in IDEA 2026.2.
+    @Suppress("DEPRECATION")
     private fun resolveFixture(reference: String): String? =
         com.intellij.openapi.application.ReadAction.compute<String?, RuntimeException> {
             resolveFixtureNow(reference)
@@ -1194,7 +1199,7 @@ class LuaUnitTestConsole(
         result.declarationLine = case?.source?.line ?: 1
         result.generated = case?.generated == true
         result.failed = failure != null
-        result.comparison = failure?.expected != null && failure?.actual != null
+        result.comparison = failure?.expected != null && failure.actual != null
         // The fixtures are exactly what this run saw. A record of a previous
         // run must not carry over: a case that fails before it reads a file,
         // or a file taken out of the test's own reading, would keep a stale
@@ -1362,6 +1367,8 @@ class LuaUnitTestConsole(
      * unreadable. Read inside a read action: the console events arrive on the
      * process reader thread, not on the EDT.
      */
+    // ReadAction.computeBlocking exists only in IDEA 2026.2.
+    @Suppress("DEPRECATION")
     private fun lineTextOf(path: String, line: Int): String =
         com.intellij.openapi.application.ReadAction.compute<String, RuntimeException> {
             lineTextNow(path, line)

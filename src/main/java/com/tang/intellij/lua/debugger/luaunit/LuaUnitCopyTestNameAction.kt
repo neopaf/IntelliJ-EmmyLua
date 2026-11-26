@@ -74,7 +74,7 @@ class LuaUnitCopyTestNameAction : AnAction("Copy Test Name", null, AllIcons.Acti
         if (proxy.isLeaf) {
             proxy.getUserData(COPY_NAME)?.let { return it }
         }
-        val shown = proxy.presentableName ?: proxy.name ?: return ""
+        val shown = proxy.presentableName
         return if (proxy.isLeaf) shown else shown.replace(Regex("""\s+\([^)]*\)$"""), "")
     }
 

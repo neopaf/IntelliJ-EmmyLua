@@ -22,6 +22,8 @@ object LuaUnitTexts {
      * failing line of a case on the process reader thread. The read action
      * makes that legal.
      */
+    // ReadAction.computeBlocking exists only in IDEA 2026.2.
+    @Suppress("DEPRECATION")
     fun read(file: Path): String? =
         com.intellij.openapi.application.ReadAction.compute<String?, RuntimeException> { readNow(file) }
 
@@ -51,6 +53,8 @@ object LuaUnitTexts {
      * it is open (every keystroke moves it), the VFS one after a save, the
      * disk's mtime for a file the VFS does not know.
      */
+    // ReadAction.computeBlocking exists only in IDEA 2026.2.
+    @Suppress("DEPRECATION")
     fun stamp(file: Path): Long =
         com.intellij.openapi.application.ReadAction.compute<Long, RuntimeException> { stampNow(file) }
 

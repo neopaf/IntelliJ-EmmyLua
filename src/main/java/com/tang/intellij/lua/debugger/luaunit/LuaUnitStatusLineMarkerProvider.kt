@@ -117,8 +117,8 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         )
         return LineMarkerInfo(
             file, TextRange(targetOffset, targetOffset + 1), PoolOfTestIcons.IGNORED_ICON,
-            com.intellij.util.Function { "LuaUnit: ignored (${target.caseName})" }, null,
-            GutterIconRenderer.Alignment.LEFT
+            com.intellij.util.Function<PsiElement, String> { "LuaUnit: ignored (${target.caseName})" }, null,
+            GutterIconRenderer.Alignment.LEFT, java.util.function.Supplier { "LuaUnit: ignored" }
         )
     }
 
@@ -140,8 +140,8 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         val tooltip = if (failed) "$label failed" else "$label passed"
         return LineMarkerInfo(
             element, element.textRange, icon,
-            com.intellij.util.Function { tooltip }, null,
-            GutterIconRenderer.Alignment.LEFT
+            com.intellij.util.Function<PsiElement, String> { tooltip }, null,
+            GutterIconRenderer.Alignment.LEFT, java.util.function.Supplier { tooltip }
         )
     }
 }

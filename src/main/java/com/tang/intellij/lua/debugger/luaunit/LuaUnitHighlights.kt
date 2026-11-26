@@ -102,7 +102,7 @@ object LuaUnitHighlights {
      */
     private fun rebuildStructureView(project: Project) {
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Structure") ?: return
-        val root = toolWindow.component ?: return
+        val root = toolWindow.component
         rebuildStructureComponents(root)
     }
 

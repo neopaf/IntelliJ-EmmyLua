@@ -35,3 +35,6 @@ jflex*.jar
 *.ipdb
 
 .intellijPlatform
+
+# Kotlin compiler session data
+.kotlin/

@@ -16,8 +16,6 @@
 
 package com.tang.intellij.lua.stubs.index
 
-import com.intellij.openapi.project.Project
-import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.stubs.IndexSink
 import com.intellij.psi.stubs.IntStubIndexExtension
 import com.intellij.psi.stubs.StubIndex
@@ -35,16 +33,19 @@ import com.tang.intellij.lua.ty.TyParameter
 class LuaClassMemberIndex : IntStubIndexExtension<LuaClassMember>() {
     override fun getKey() = StubKeys.CLASS_MEMBER
 
-    override fun get(s: Int, project: Project, scope: GlobalSearchScope): Collection<LuaClassMember> =
-            StubIndex.getElements(StubKeys.CLASS_MEMBER, s, project, scope, LuaClassMember::class.java)
-
     companion object {
         val instance = LuaClassMemberIndex()
 
         private fun process(key: String, context: SearchContext, processor: Processor<LuaClassMember>): Boolean {
             if (context.isDumb)
                 return false
-            val all = instance.get(key.hashCode(), context.project, context.scope)
+            val all = StubIndex.getElements(
+                StubKeys.CLASS_MEMBER,
+                key.hashCode(),
+                context.project,
+                context.scope,
+                LuaClassMember::class.java
+            )
             return ContainerUtil.process(all, processor)
         }
 

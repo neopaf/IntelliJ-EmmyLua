@@ -17,6 +17,7 @@
 package com.tang.intellij.lua.psi.search
 
 import com.intellij.openapi.project.Project
+import com.intellij.psi.stubs.StubIndex
 import com.intellij.util.Processor
 import com.tang.intellij.lua.psi.LuaClass
 import com.tang.intellij.lua.psi.LuaClassMember
@@ -25,6 +26,7 @@ import com.tang.intellij.lua.search.SearchContext
 import com.tang.intellij.lua.stubs.index.LuaAliasIndex
 import com.tang.intellij.lua.stubs.index.LuaClassIndex
 import com.tang.intellij.lua.stubs.index.LuaClassMemberIndex
+import com.tang.intellij.lua.stubs.index.StubKeys
 import com.tang.intellij.lua.ty.ITyClass
 
 class LuaShortNamesManagerImpl : LuaShortNamesManager() {
@@ -44,7 +46,13 @@ class LuaShortNamesManagerImpl : LuaShortNamesManager() {
 
     override fun getClassMembers(clazzName: String, context: SearchContext): Collection<LuaClassMember> {
         if (context.forStub) return emptyList()
-        return LuaClassMemberIndex.instance.get(clazzName.hashCode(), context.project, context.scope)
+        return StubIndex.getElements(
+            StubKeys.CLASS_MEMBER,
+            clazzName.hashCode(),
+            context.project,
+            context.scope,
+            LuaClassMember::class.java
+        )
     }
 
     override fun processMembers(type: ITyClass, context: SearchContext, processor: Processor<LuaClassMember>): Boolean {
