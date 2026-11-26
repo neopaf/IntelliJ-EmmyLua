@@ -577,13 +577,20 @@ local caseTraceback = nil
 
 -- The traceback is written through realStdout: LuaUnit's own output wrapper may
 -- already own io.write, and the trace must never depend on it.
+-- Lua 5.1's xpcall takes (f, err) only and silently drops any further
+-- arguments (LuaJIT and 5.2+ pass them on), which is exactly how a class
+-- method loses its self: the case then runs with self == nil and every
+-- `function TestSuite:test_x()` dies on its first `self:...`. The call is
+-- closed over instead, the same way LuaUnit's own protectedCall does it.
 local function traced(func)
     return function(...)
         local args = table.pack(...)
-        local results = table.pack(xpcall(func, function(err)
+        local results = table.pack(xpcall(function()
+            return func(table.unpack(args, 1, args.n))
+        end, function(err)
             caseTraceback = debug.traceback(tostring(err), 2)
             return err
-        end, table.unpack(args, 1, args.n)))
+        end))
         if results[1] then
             return table.unpack(results, 2, results.n)
         end
