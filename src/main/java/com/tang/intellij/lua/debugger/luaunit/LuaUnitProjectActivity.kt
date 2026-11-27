@@ -29,6 +29,7 @@ class LuaUnitProjectActivity : ProjectActivity {
         // the index was loaded: their fixture blocks are built here, once the
         // project is up.
         LuaUnitFixtureBlockInlays.ensureSubscribed(project)
+        LuaUnitRunIndex.getInstance(project).watchEdits()
         LuaUnitHighlights.refresh(project, "project opened")
 
         val runManager = RunManager.getInstance(project)

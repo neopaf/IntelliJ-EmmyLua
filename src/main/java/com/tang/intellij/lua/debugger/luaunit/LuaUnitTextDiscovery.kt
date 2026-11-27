@@ -33,21 +33,29 @@ object LuaUnitTextDiscovery {
 
     /** The cases of a file, cached by its modification time: the gutter asks
       * for them on every leaf, and re-reading the whole file each time is
-      * what made a large suite freeze the editor. */
-    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Case>>>()
+      * what made a large suite freeze the editor.
+      *
+      * <p>The entry also holds the edit counter of the IDE: the cases of a
+      * suite come from a data module the suite requires, whose own stamp does
+      * not move when the module is edited. */
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, CacheEntry>()
 
-    /** Same as [cases], served from the cache when the file has not changed. */
+    private class CacheEntry(val stamp: Long, val revision: Long, val cases: List<Case>)
+
+    /** Same as [cases], served from the cache while neither the file nor the
+      * text the suite reads has changed. */
     fun casesCached(manifest: Path, file: Path, root: Path): List<Case> {
         // The stamp follows the editor's copy (unsaved edits included): a
         // disk mtime would leave the markers behind until the file is saved.
         val stamp = LuaUnitTexts.stamp(file)
+        val revision = LuaUnitTextEdits.revision
         val key = "$manifest\u0000$file"
         val hit = cache[key]
-        if (hit != null && hit.first == stamp) {
-            return hit.second
+        if (hit != null && hit.stamp == stamp && hit.revision == revision) {
+            return hit.cases
         }
         val fresh = cases(manifest, file, root)
-        cache[key] = stamp to fresh
+        cache[key] = CacheEntry(stamp, revision, fresh)
         return fresh
     }
 
@@ -196,11 +204,10 @@ object LuaUnitTextDiscovery {
         // The data table lives in another module or in this very file.
         val dataModule = dataModuleOf(text, table)
         val dataFile = dataModule?.let { resolveModule(root, it) } ?: file
-        val dataText = try {
-            Files.readString(dataFile)
-        } catch (e: Exception) {
-            return result.sortedBy { it.source.substringAfterLast(':').toIntOrNull() ?: 0 }
-        }
+        // The editor's copy of the data module, not the disk: a row commented
+        // out a second ago is not on the disk yet.
+        val dataText = LuaUnitTexts.read(dataFile)
+            ?: return result.sortedBy { it.source.substringAfterLast(':').toIntOrNull() ?: 0 }
         val generated = LinkedHashMap<String, Case>()
         val tableBody = generatorTable(dataText, table)
         val (rowsText, rowsBase) = tableBody ?: (dataText to 0)

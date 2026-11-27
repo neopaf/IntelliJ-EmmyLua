@@ -65,14 +65,12 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
             return null
         }
         val document = PsiDocumentManager.getInstance(element.project).getDocument(file) ?: return null
-        val start = element.textRange.startOffset
-        val end = element.textRange.endOffset
-        val target = ignored.firstOrNull { case ->
-            val lineStartOffset = document.getLineStartOffset(
-                (case.declarationLine - 1).coerceIn(0, document.lineCount - 1)
-            )
-            lineStartOffset in start..end
-        } ?: return null
+        // The lines the comment covers. A line start would not do: a commented
+        // out row is indented, so its line begins before the comment token, and
+        // the token's range never contains the start of its own line.
+        val startLine = document.getLineNumber(element.textRange.startOffset) + 1
+        val endLine = document.getLineNumber(element.textRange.endOffset) + 1
+        val target = ignored.firstOrNull { it.declarationLine in startLine..endLine } ?: return null
         val targetOffset = document.getLineStartOffset(
             (target.declarationLine - 1).coerceIn(0, document.lineCount - 1)
         )

@@ -75,3 +75,24 @@ object LuaUnitTexts {
         }
     }
 }
+
+/**
+ * A counter of the edits made in the IDE.
+ *
+ * <p>The discovery and the snapshot of the ignored cases cache their answer by
+ * the stamps of the files they read: the stamp of a suite moves on its own
+ * edit, but a data module the suite requires has no stamp among them — the
+ * row a user just commented out would never show up in the gutter. The counter
+ * moves on every document change, and the caches that read files it cannot
+ * name drop their answers when it moves.
+ */
+object LuaUnitTextEdits {
+
+    @Volatile
+    var revision: Long = 0
+        private set
+
+    fun touch() {
+        revision++
+    }
+}

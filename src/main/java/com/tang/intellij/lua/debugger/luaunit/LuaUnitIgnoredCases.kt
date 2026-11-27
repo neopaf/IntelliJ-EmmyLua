@@ -44,6 +44,9 @@ object LuaUnitIgnoredCases {
     /** One pass over the suite, kept while its files do not change. */
     private class Snapshot(
         val stamp: Long,
+        /** The edit counter the pass was built at: a data module edited in the
+         *  IDE has no stamp among the manifest files. */
+        val revision: Long,
         val byFile: Map<String, List<Ignored>>
     ) {
         /** When the stamps were checked last: a burst of calls reuses them. */
@@ -70,16 +73,17 @@ object LuaUnitIgnoredCases {
     private fun snapshot(manifest: Path, root: Path): Snapshot {
         val key = manifest.toAbsolutePath().normalize()
         val now = System.currentTimeMillis()
+        val revision = LuaUnitTextEdits.revision
         val cached = snapshots[key]
-        if (cached != null && now - cached.checkedAt < REFRESH_MS) {
+        if (cached != null && cached.revision == revision && now - cached.checkedAt < REFRESH_MS) {
             return cached
         }
         val stamp = stampOf(manifest)
-        if (cached != null && cached.stamp == stamp) {
+        if (cached != null && cached.stamp == stamp && cached.revision == revision) {
             cached.checkedAt = now
             return cached
         }
-        return build(manifest, root, stamp).also { snapshots[key] = it }
+        return build(manifest, root, stamp, revision).also { snapshots[key] = it }
     }
 
     /** The stamps of the manifest and every file it lists, as one number. */
@@ -91,7 +95,7 @@ object LuaUnitIgnoredCases {
         return stamp
     }
 
-    private fun build(manifest: Path, root: Path, stamp: Long): Snapshot {
+    private fun build(manifest: Path, root: Path, stamp: Long, revision: Long): Snapshot {
         val byFile = HashMap<String, MutableList<Ignored>>()
         val seen = HashSet<String>()
         for (suite in manifestFiles(manifest)) {
@@ -109,7 +113,7 @@ object LuaUnitIgnoredCases {
                 byFile.getOrPut(fileKey) { ArrayList() }.add(Ignored(case.name, line))
             }
         }
-        return Snapshot(stamp, byFile)
+        return Snapshot(stamp, revision, byFile)
     }
 
     /** The files of [manifest], or none when it cannot be read. */
