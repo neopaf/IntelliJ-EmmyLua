@@ -147,10 +147,11 @@ not prose — they never become part of a description.
   suite files and data modules) gets the same marker with **Run** and **Debug**
   actions. A plain click on a marker that names one test runs it at once; the
   Run/Debug question is asked by a right click, which always opens the menu.
-  A data row several suites build their cases from is more than one
-  test: the icon's menu asks which one to run — a labelled Run/Debug pair
-  (plus Modify Run Configuration) per generator file — and a plain click there
-  opens that menu too.
+  A data row several suites build their cases from declares one case per
+  generator. Its marker runs all of them in one tab on a plain click; the
+  right-click menu lists **Run all N cases** and **Debug all N cases** first,
+  then a labelled Run/Debug pair (plus Modify Run Configuration) per generator
+  file.
 - **A file node with cases in the tests tree** — its context menu carries Run,
   Debug and Modify Run Configuration for the whole file: the node itself has no
   location URL (a double-click toggles it), so the platform builds no entries
@@ -208,6 +209,20 @@ not prose — they never become part of a description.
   `-- id = "..."` row) keeps its case in the tree but never runs, so from the
   start it carries the crossed circle — before any run, and inside a block the
   mark sits on the declaration line itself, not on the `--[[` opener.
+- A line whose data row feeds several generators may be covered by only some
+  of its cases: a run of one generator updates that case and leaves the others
+  as an older run left them. The status icon then keeps its colour — the
+  result of the cases the newest run of the line really executed — and gets a
+  small white dot in its top-right corner. The dot disappears only when one
+  run executed every case of the line; a line no run has touched keeps the
+  bare run arrow, without the dot.
+- The same fact is spelled out after the row, only for a row of two or more
+  cases and only when they differ: `2 cases: decode_ss7 passed · encode_ss7
+  not run`. The names are the generator files without `test_`; the statuses
+  belong to the newest run of the row (a record of an older run reads
+  `not run`). The hint sits before a trailing `--` comment, and its tooltip
+  lists the full case names and their files. A row whose cases all passed, and
+  a row no run has touched, shows no hint.
 - A failed assertion is marked at the line a double-click on the case opens:
   the assertion's own line, even when it lives in another file (a helper such
   as `tests/test_common.lua`). The inlay after the code reads

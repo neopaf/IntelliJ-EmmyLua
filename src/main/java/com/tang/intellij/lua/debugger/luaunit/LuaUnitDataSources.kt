@@ -27,6 +27,18 @@ object LuaUnitDataSources {
     data class Generator(val file: Path, val suite: String, val prefix: String)
 
     /**
+     * The LuaUnit name of the case [generator] builds from the row named
+     * [rowName].
+     *
+     * <p>A generator of globals (`_G['test_' .. v.id]`) names its case with no
+     * class part — exactly how LuaUnit reports it; a class generator
+     * (`Suite['prefix' .. v.id]`) keeps the `Suite.` part.
+     */
+    fun caseName(generator: Generator, rowName: String): String =
+        if (generator.suite == "_G") generator.prefix + rowName
+        else generator.suite + "." + generator.prefix + rowName
+
+    /**
      * The generators of every data module of the manifest, cached by the
      * joined change stamps of the manifest and all its files: one scan serves
      * the whole gutter pass, and any edit (saved or not) drops the cache.

@@ -63,6 +63,17 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
      */
     var failedCases: List<String> = emptyList()
 
+    /**
+     * The exact cases of one data row, as "fileNULcaseName" entries: the row
+     * feeds every generator of the module, and a plain click on its gutter icon
+     * runs all of them in one tab.
+     *
+     * <p>The list is the case set of the run, the way [failedCases] is: the
+     * discovered tree knows the cases by name, and each file of the list
+     * becomes one suite process with those names. Empty for every other scope.
+     */
+    var selectedCases: List<String> = emptyList()
+
     /** A copy of this configuration that runs only [failedCases]. */
     fun withFailedCases(cases: Map<Path, List<String>>): LuaUnitRunConfiguration {
         val copy = clone() as LuaUnitRunConfiguration
@@ -71,6 +82,7 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
         // rerun is built from that discovery (a CASE scope would discover
         // only the first failed file and leave the others "(0)").
         copy.scopeKind = Kind.ALL
+        copy.selectedCases = emptyList()
         copy.failedCases = cases.flatMap { (file, names) -> names.map { "$file\u0000$it" } }
         if (cases.isNotEmpty()) {
             copy.scopePath = cases.keys.first().toString()
@@ -116,8 +128,33 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
         val full = if (suite == "_G") "$prefix$id" else "$suite.$prefix$id"
         scopeName = full
         casePattern = full
+        selectedCases = emptyList()
+        failedCases = emptyList()
         workingDir = LuaUnitProjectRoot.of(file)?.toString() ?: workingDir
         name = full
+    }
+
+    /**
+     * Points this configuration at every case a data row declares: one case per
+     * generator, all of them in one run and one tab.
+     *
+     * <p>The scope is the whole manifest, not one file: the generators live in
+     * different test files, and [LuaUnitDiscovery] narrows the walk to the
+     * files of [targets] (see [selectedCases]).
+     */
+    fun configureDataCases(targets: List<Pair<Path, String>>) {
+        if (targets.isEmpty()) {
+            return
+        }
+        val (file, firstName) = targets.first()
+        scopePath = file.toString()
+        scopeKind = Kind.ALL
+        scopeName = firstName
+        casePattern = null
+        selectedCases = targets.map { (target, caseName) -> "$target\u0000$caseName" }
+        failedCases = emptyList()
+        workingDir = LuaUnitProjectRoot.of(file)?.toString() ?: workingDir
+        name = if (targets.size == 1) firstName else "$firstName (+${targets.size - 1})"
     }
 
     /**
@@ -231,6 +268,16 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
         JDOMExternalizerUtil.writeField(element, "scopeName", scopeName)
         JDOMExternalizerUtil.writeField(element, "casePattern", casePattern)
         JDOMExternalizerUtil.writeField(element, "extraArgs", extraArgs)
+        // The exact cases of a data row: one child per case. The NUL of the
+        // in-memory "fileNULname" key is not a legal XML character, so the two
+        // halves travel as attributes of their own.
+        element.removeChildren("selectedCase")
+        for (entry in selectedCases) {
+            val case = Element("selectedCase")
+            case.setAttribute("file", entry.substringBefore('\u0000'))
+            case.setAttribute("name", entry.substringAfter('\u0000'))
+            element.addContent(case)
+        }
         envs.writeExternal(element)
     }
 
@@ -250,6 +297,11 @@ class LuaUnitRunConfiguration(project: Project, factory: ConfigurationFactory)
         scopeName = JDOMExternalizerUtil.readField(element, "scopeName")
         casePattern = JDOMExternalizerUtil.readField(element, "casePattern")
         extraArgs = JDOMExternalizerUtil.readField(element, "extraArgs")
+        selectedCases = element.getChildren("selectedCase").mapNotNull { child ->
+            val file = child.getAttributeValue("file") ?: return@mapNotNull null
+            val name = child.getAttributeValue("name") ?: return@mapNotNull null
+            "$file\u0000$name"
+        }
         envs = EnvironmentVariablesData.readExternal(element)
     }
 

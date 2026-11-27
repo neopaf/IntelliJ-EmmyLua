@@ -141,6 +141,8 @@
         <projectViewNodeDecorator implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProjectViewDecorator"/>
         <codeInsight.inlayProvider language="Lua" id="luaunit.failures" isEnabledByDefault="true"
             implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitFailureInlayHints"/>
+        <codeInsight.inlayProvider language="Lua" id="luaunit.caseStatus" isEnabledByDefault="true"
+            implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitCaseStatusHints"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.remote.LuaMobDebuggerRunner"/>
         <configurationType implementation="com.tang.intellij.lua.debugger.remote.LuaMobConfigurationType"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.app.LuaAppRunner"/>

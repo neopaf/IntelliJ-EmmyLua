@@ -46,10 +46,21 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
                 listOf("" to scope)
             else -> {
                 val groups = LuaTestManifest.groups(manifest)
+                // A data-row run names the exact cases: only the files that
+                // host their generators have to be discovered, not the whole
+                // manifest (which may hold dozens of suites).
+                val selected = selectedFiles()
+                val narrowed = if (selected.isEmpty()) groups else groups
+                    .map { group -> LuaTestManifest.Group(group.name, group.files.filter { it.normalized() in selected }) }
+                    .filter { group -> group.files.isNotEmpty() }
+                    // A stored configuration may name files the manifest no
+                    // longer lists: the walk then falls back to the manifest,
+                    // and the cases of the run are still filtered by name.
+                    .ifEmpty { groups }
                 val filtered = when (configuration.scopeKind) {
                     LuaUnitRunConfiguration.Kind.SECTION ->
-                        groups.filter { it.name.equals(configuration.scopeName, ignoreCase = true) }
-                    else -> groups
+                        narrowed.filter { it.name.equals(configuration.scopeName, ignoreCase = true) }
+                    else -> narrowed
                 }
                 val list = ArrayList<Pair<String, Path>>()
                 for (group in filtered) {
@@ -91,6 +102,26 @@ class LuaUnitDiscovery(private val configuration: LuaUnitRunConfiguration) {
                 "${merged.sumOf { s -> s.suites.sumOf { it.cases.size } }} cases, failures=$failures"
         )
         return LuaUnitNode.Root(manifest, merged)
+    }
+
+    /** The files of the exact cases a data-row run names. */
+    private fun selectedFiles(): Set<Path> {
+        if (configuration.selectedCases.isEmpty()) {
+            return emptySet()
+        }
+        return configuration.selectedCases.mapNotNullTo(HashSet()) { entry ->
+            try {
+                Path.of(entry.substringBefore('\u0000')).toAbsolutePath().normalize()
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun Path.normalized(): Path = try {
+        toAbsolutePath().normalize()
+    } catch (e: Exception) {
+        this
     }
 
     private fun discoverCases(file: Path, display: String, failures: MutableList<String>): List<LuaUnitNode.Case> {

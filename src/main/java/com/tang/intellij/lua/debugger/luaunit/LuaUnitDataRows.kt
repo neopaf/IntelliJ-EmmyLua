@@ -40,6 +40,41 @@ internal object LuaUnitDataRows {
                 it.name == "id" && lineOf(document, it) == line
             }
 
+    /**
+     * True when [literal] is the value of a row's `id` or `desc` field.
+     *
+     * <p>The key of the field must be exactly `id`/`desc` (or `["id"]` /
+     * `['id']`), not a mere prefix like `identifier`; the leading name is
+     * matched whole. `desc` is the row's case name when the generator reads it
+     * first, so its literal is a case-declaration anchor too.
+     */
+    fun isEntryLiteral(literal: com.tang.intellij.lua.psi.LuaLiteralExpr): Boolean {
+        val text = literal.text
+        if (text.length < 2 || (text.first() != '"' && text.first() != '\'')) {
+            return false
+        }
+        val field = literal.parent?.text?.trimStart() ?: return false
+        val name = field.takeWhile { it.isLetterOrDigit() || it == '_' }
+        return name == "id" || name == "desc" ||
+            field.startsWith("[\"id\"]") || field.startsWith("['id']") ||
+            field.startsWith("[\"desc\"]") || field.startsWith("['desc']")
+    }
+
+    /** True when the literal is the value of the row's `desc` field. */
+    fun isDescField(literal: com.tang.intellij.lua.psi.LuaLiteralExpr): Boolean {
+        val field = literal.parent?.text?.trimStart() ?: return false
+        val name = field.takeWhile { it.isLetterOrDigit() || it == '_' }
+        return name == "desc" || field.startsWith("[\"desc\"]") || field.startsWith("['desc']")
+    }
+
+    /** True when the row of the literal has a `desc` field besides the `id`. */
+    fun hasDescSibling(literal: com.tang.intellij.lua.psi.LuaLiteralExpr): Boolean {
+        val row = PsiTreeUtil.getParentOfType(
+            literal, LuaTableExpr::class.java, false
+        ) ?: return false
+        return row.findField("desc") != null
+    }
+
     /** The table of the row that declares its `id` at [line], or null. */
     fun rowOf(file: PsiFile, document: Document, line: Int): LuaTableExpr? {
         val id = idField(file, document, line) ?: return null
