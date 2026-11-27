@@ -172,6 +172,11 @@
     <idea-version since-build="253" until-build="262.*"/>
     <xi:include href="emmylua-core.xml" xpointer="xpointer(/idea-plugin/*)"/>
     <depends optional="true" config-file="emmylua-project.xml">com.intellij.java</depends>
+    <!-- The Shell Script plugin (bundled in IntelliJ IDEA Ultimate) puts a run
+         marker on any file that starts with a shebang, Lua included. Its
+         extension point lets a plugin turn that off for its own files; the
+         config file is loaded only when the Shell Script plugin is there. -->
+    <depends optional="true" config-file="emmylua-sh.xml">com.jetbrains.sh</depends>
     <!-- The SM test framework of the tests tree lives in the bundled plugin
          intellij.testRunner.plugin since 2026.2; in 2025.3 the classes are
          part of the platform itself. The build replaces this token: the

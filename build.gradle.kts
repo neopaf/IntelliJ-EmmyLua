@@ -187,6 +187,11 @@ project(":") {
                 intellijIdeaUltimate(buildVersionData.ideaSDKVersion)
             }
             bundledModule("intellij.spellchecker")
+            // Only needed to compile LuaShRunCondition, which implements the
+            // extension point of the bundled Shell Script plugin. The plugin is
+            // optional in plugin.xml: a Community Edition install, which has no
+            // Shell Script, never loads the class.
+            bundledPlugin("com.jetbrains.sh")
             // 2026.2 moved the SM test framework out of the platform into a
             // bundled plugin; in 2025.3 the classes are in the platform itself.
             if (buildVersionData.ideaSDKShortVersion == "2026.2") {
