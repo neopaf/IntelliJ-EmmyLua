@@ -51,6 +51,12 @@ Everything in this repository is done in **English**:
   (`./gradlew buildPlugin -DIDEA_VER=2025.3 -x bunch -x buildSearchableOptions
   --offline`), then start it (`./gradlew runIde ...`). Never rebuild into the
   sandbox while the IDE is up.
+- **Before starting the sandbox, check whether any other IDEA is already
+  running** (a regular installed IntelliJ IDEA, or a leftover sandbox JVM) with
+  `pgrep -fl 'idea|idea-sandbox'` or `ps aux | grep -i idea`. There is not
+  enough memory on this machine for two IDEs at once. If another IDEA is up, do
+  **not** start the sandbox: ask the user whether it may be killed, and only
+  proceed (kill it, then start the sandbox) after an explicit yes.
 - After every sandbox start (a rebuild followed by `runIde`), publish a
   numbered table of the user's standing requests with their status: done and
   waiting for a check, in progress, not done. Drop a row once the user confirms
