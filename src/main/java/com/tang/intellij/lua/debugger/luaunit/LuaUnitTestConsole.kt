@@ -1197,6 +1197,10 @@ class LuaUnitTestConsole(
             ?.let { LuaUnitRunIndex.canonical(absolutePathOf(it)) }
             ?: testFile
         result.declarationLine = case?.source?.line ?: 1
+        // The text of the declaration line ties the record to that very line:
+        // a line rewritten later (or shifted onto a neighbour's) is not the
+        // case this run measured, and its result is not shown there.
+        result.declarationText = lineTextOf(result.declarationFile, result.declarationLine)
         result.generated = case?.generated == true
         result.failed = failure != null
         result.comparison = failure?.expected != null && failure.actual != null
@@ -1269,6 +1273,7 @@ class LuaUnitTestConsole(
         result.declarationFile = testFile
         result.declarationLine = line
         result.line = line
+        result.declarationText = lineTextOf(result.declarationFile, result.declarationLine)
         result.setup = true
         result.generated = false
         result.failed = false

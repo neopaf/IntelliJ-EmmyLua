@@ -41,7 +41,8 @@ import com.intellij.openapi.util.io.FileUtil
  */
 @Service(Service.Level.PROJECT)
 @State(name = "LuaUnitRunIndex", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
-class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<LuaUnitRunIndex.State> {
+class LuaUnitRunIndex(private val project: Project) :
+    PersistentStateComponent<LuaUnitRunIndex.State>, com.intellij.openapi.Disposable {
 
     /** How a test file (or a fixture, through the tests using it) ended. */
     enum class Status { PASSED, FAILED }
@@ -89,6 +90,13 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
          * an `Enter` above an `error()` does not move the mark to another line.
          */
         var errorText: String = ""
+        /**
+         * The text of the declaration line as the run saw it, trimmed. It ties
+         * the record to the very line the case was declared on: the lines above
+         * may shift, and the record is moved with them; a line the user rewrote
+         * is forgotten, and a record that meets a different text is not shown.
+         */
+        var declarationText: String = ""
         var message: String = ""
         var expected: String? = null
         var actual: String? = null
@@ -192,6 +200,102 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
     fun hasResultsFor(file: String): Boolean {
         val path = canonical(file)
         return state.cases.any { it.testFile == path || it.declarationFile == path || it.errorFile == path }
+    }
+
+    /**
+     * Applies an edit of [file] to the records of the cases declared in it.
+     *
+     * <p>The cases declared on the lines the edit touched are forgotten: the
+     * code the run saw is gone, and the new text cannot tell whether it means
+     * the same (a removed `--` brings a commented-out case back). The
+     * declarations below the edit move by [delta] lines — their own lines did
+     * not change, and their results stay. The rest of the file keeps its
+     * state: editing one case is no reason to forget the others.
+     */
+    fun applyEdit(file: String, firstLine: Int, lastLine: Int, delta: Int) {
+        if (firstLine < 1 || lastLine < firstLine) {
+            return
+        }
+        val path = canonical(file)
+        var changed = false
+        val iterator = state.cases.iterator()
+        while (iterator.hasNext()) {
+            val case = iterator.next()
+            // The file record stands for the whole file: it has no declaration
+            // to move or to drop.
+            if (case.fileLevel) {
+                continue
+            }
+            val declaredIn = case.declarationFile.ifEmpty { case.testFile }
+            if (canonical(declaredIn) != path) {
+                continue
+            }
+            when {
+                case.declarationLine in firstLine..lastLine -> {
+                    iterator.remove()
+                    changed = true
+                }
+                delta != 0 && case.declarationLine > lastLine -> {
+                    case.declarationLine += delta
+                    changed = true
+                }
+            }
+        }
+        if (changed) {
+            directoryCache = null
+            lineCache = emptyMap()
+        }
+    }
+
+    /**
+     * Subscribes the index to the edits of the project's documents. Called once
+     * per project from [LuaUnitProjectActivity].
+     */
+    fun watchEdits() {
+        com.intellij.openapi.editor.EditorFactory.getInstance().getEventMulticaster()
+            .addDocumentListener(editListener, project)
+    }
+
+    override fun dispose() {
+        com.intellij.openapi.editor.EditorFactory.getInstance().getEventMulticaster()
+            .removeDocumentListener(editListener)
+    }
+
+    /** The lines an edit touched, read before the document changed. */
+    private class PendingEdit(val first: Int, val last: Int)
+
+    private val pendingEdits =
+        java.util.concurrent.ConcurrentHashMap<com.intellij.openapi.editor.Document, PendingEdit>()
+
+    /**
+     * One edit moves or forgets the records of the file it belongs to. The
+     * lines of the edit are read before the change (the document still has the
+     * old text) and after it (the new one); their difference is how far the
+     * declarations below the edit shift.
+     */
+    private val editListener = object : com.intellij.openapi.editor.event.DocumentListener {
+        override fun beforeDocumentChange(event: com.intellij.openapi.editor.event.DocumentEvent) {
+            val document = event.document
+            val length = document.textLength
+            val first = document.getLineNumber(event.offset.coerceIn(0, length)) + 1
+            val last = document.getLineNumber((event.offset + event.oldLength).coerceIn(0, length)) + 1
+            pendingEdits[document] = PendingEdit(first, last)
+            // The text caches read files the edited one may feed (a data module
+            // a suite requires): their stamps do not move with this document.
+            LuaUnitTextEdits.touch()
+        }
+
+        override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+            val document = event.document
+            val before = pendingEdits.remove(document) ?: return
+            val file = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+                .getFile(document) ?: return
+            val length = document.textLength
+            val afterFirst = document.getLineNumber(event.offset.coerceIn(0, length)) + 1
+            val afterLast = document.getLineNumber((event.offset + event.newLength).coerceIn(0, length)) + 1
+            val delta = (afterLast - afterFirst) - (before.last - before.first)
+            applyEdit(file.path, before.first, before.last, delta)
+        }
     }
 
     /** The record of one case, or null when it did not run in any known run. */

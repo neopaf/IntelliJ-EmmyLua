@@ -28,6 +28,11 @@ import com.intellij.openapi.util.TextRange
  * Drawing such a record puts the fixtures and the result of a dead case into
  * the body of a live one — a block of file links in the middle of a `destMap`.
  *
+ * <p>A line that still declares the case is not enough: the record remembers
+ * the text of the line as the run saw it, and a line rewritten since (a
+ * commented-out row brought back, an `id` renamed, a line that shifted onto the
+ * declaration of a neighbour) is not the declaration the record speaks about.
+ *
  * <p>Every editor integration therefore asks here before drawing anything, and
  * a record whose line no longer declares the case stays invisible. The answer
  * is a look at one line of the document, never the PSI: the question is asked
@@ -54,13 +59,24 @@ internal object LuaUnitCaseLines {
      * identifier and cannot be matched word by word: such a case only has to
      * meet a declaration of some kind.
      */
-    fun declares(document: Document, line: Int, case: LuaUnitRunIndex.CaseResult): Boolean {
+    fun declares(
+        document: Document,
+        line: Int,
+        case: LuaUnitRunIndex.CaseResult
+    ): Boolean {
         if (line < 1 || line > document.lineCount) {
             return false
         }
         val text = document.getText(
             TextRange(document.getLineStartOffset(line - 1), document.getLineEndOffset(line - 1))
         ).trim()
+        // The record remembers the line as the run saw it. A different text
+        // means the record belongs to another state of the file (the line was
+        // rewritten, or the lines moved and this one is a stranger): the
+        // result of the run says nothing about it.
+        if (case.declarationText.isNotEmpty() && case.declarationText != text) {
+            return false
+        }
         // A commented-out twin of a case (`-- function Suite:test_x()`): the
         // run never executes it, so its line declares nothing.
         if (text.isEmpty() || text.startsWith("--")) {
