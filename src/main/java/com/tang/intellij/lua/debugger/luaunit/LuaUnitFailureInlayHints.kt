@@ -310,10 +310,10 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
     }
 
     /**
-     * One failure hint: the `-- ` of a Lua remark in the comment colour, the
-     * icon of the test tree and the text. A failed assertion is a link to its
-     * diff — the scheme's link colour and an underline; an `error()` is plain
-     * bright red.
+     * One failure hint: a blank and the `-- ` of a Lua remark in the comment
+     * colour, the icon of the test tree and the text. A failed assertion is a
+     * link to its diff — the scheme's link colour and an underline; an
+     * `error()` is plain bright red.
      */
     private class FailurePresentation(
         private val icon: javax.swing.Icon,
@@ -387,8 +387,11 @@ class LuaUnitFailureInlayHints : InlayHintsProvider<NoSettings> {
         override fun toString(): String = PREFIX + label
 
         companion object {
-            /** The `-- ` that starts a Lua remark. */
-            private const val PREFIX = "-- "
+            /**
+             * The blank and the `-- ` that start a Lua remark: the blank keeps
+             * the hint off the code it follows.
+             */
+            private const val PREFIX = " -- "
 
             /** The space between the icon and the text. */
             private const val ICON_GAP = 2
