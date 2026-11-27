@@ -61,6 +61,13 @@ class LuaUnitRunIndex(private val project: Project) :
         var generated: Boolean = false
         var failed: Boolean = false
         /**
+         * The run that produced this record, as a counter of [LuaUnitRunIndex].
+         * A partial run updates only the cases it executed; a record of an
+         * older run next to a fresh one means the line was not covered whole,
+         * and the gutter shows it (see [LuaUnitLineCases.partial]).
+         */
+        var runId: Long = 0
+        /**
          * The failure carried an expected/actual pair: the tree paints such a
          * case with the "failed" cross, every other failure with the error
          * circle. The gutter and the inlay must repeat that icon exactly.
@@ -107,6 +114,8 @@ class LuaUnitRunIndex(private val project: Project) :
     class State {
         var cases: MutableList<CaseResult> = ArrayList()
         var lastRun: Long = 0
+        /** The number of the last published run: [CaseResult.runId] of its cases. */
+        var runCounter: Long = 0
     }
 
     private var state = State()
@@ -154,6 +163,7 @@ class LuaUnitRunIndex(private val project: Project) :
         this.state = State().also {
             it.cases = ArrayList(merged.values)
             it.lastRun = state.lastRun
+            it.runCounter = state.runCounter
         }
         directoryCache = null
         lineCache = emptyMap()
@@ -167,11 +177,17 @@ class LuaUnitRunIndex(private val project: Project) :
         if (results.isEmpty()) {
             return
         }
+        // One number for the whole run: every case it executed carries it, and
+        // the cases of the previous runs keep theirs — a line covered by some
+        // of its cases only is told apart from a fully covered one.
+        state.runCounter += 1
+        val runId = state.runCounter
         val merged = LinkedHashMap<String, CaseResult>()
         for (case in state.cases) {
             merged[case.key()] = case
         }
         for (case in results) {
+            case.runId = runId
             if (case.fileLevel) {
                 // A file has one record: a copy stored under a retired name
                 // (the old NUL-prefixed one) must not survive the publish and

@@ -167,12 +167,14 @@ object LuaUnitRunConfigurations {
                 ?: return@firstOrNull false
             configuration.scopeKind == template.scopeKind &&
                     configuration.scopeFile == template.scopeFile &&
-                    configuration.scopeName == template.scopeName
+                    configuration.scopeName == template.scopeName &&
+                    configuration.selectedCases == template.selectedCases
         }
         if (existing != null) {
             (existing.configuration as? LuaUnitRunConfiguration)?.let { configuration ->
                 configuration.casePattern = template.casePattern
                 configuration.workingDir = template.workingDir
+                configuration.selectedCases = template.selectedCases
             }
             return existing
         }

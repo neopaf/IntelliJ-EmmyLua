@@ -121,16 +121,18 @@ class LuaUnitRunState(
 }
 
 /**
- * The suites to run. A "rerun failed" copy carries its cases instead of a
- * scope: each of its files becomes a suite whose pattern runs the union of the
- * failed case names of that file, and its tree nodes are exactly those cases.
+ * The suites to run. A "rerun failed" copy and a data-row run carry their
+ * cases instead of a scope: each of their files becomes a suite whose pattern
+ * runs the union of the exact case names of that file, and its tree nodes are
+ * exactly those cases.
  */
 internal fun suitesFor(configuration: LuaUnitRunConfiguration, tree: LuaUnitNode.Root): List<LuaUnitSuite> {
-    if (configuration.failedCases.isEmpty()) {
+    val exact = configuration.selectedCases.ifEmpty { configuration.failedCases }
+    if (exact.isEmpty()) {
         return LuaUnitTestConsole.suitesOf(configuration, tree)
     }
     val byFile = LinkedHashMap<java.nio.file.Path, MutableList<String>>()
-    for (entry in configuration.failedCases) {
+    for (entry in exact) {
         val file = entry.substringBefore('\u0000')
         val name = entry.substringAfter('\u0000')
         byFile.getOrPut(java.nio.file.Path.of(file)) { ArrayList() }.add(name)

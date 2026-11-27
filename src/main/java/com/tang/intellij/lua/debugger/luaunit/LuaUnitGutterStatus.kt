@@ -60,13 +60,25 @@ internal object LuaUnitGutterStatus {
     }
 
     /** The one gutter icon of [cases]: the arrow, with the result when known. */
-    fun iconOf(cases: Collection<LuaUnitRunIndex.CaseResult>): Icon {
+    fun iconOf(cases: Collection<LuaUnitRunIndex.CaseResult>): Icon = iconOf(cases, false)
+
+    /**
+     * The one gutter icon of [cases], marked with the partial-coverage dot when
+     * [partial] (see [LuaUnitLineCases.partial]).
+     *
+     * <p>The dot is a mark of the line, not of the run: it survives a run in
+     * progress, because the cases that did not run stay unknown while the
+     * others are being measured.
+     */
+    fun iconOf(cases: Collection<LuaUnitRunIndex.CaseResult>, partial: Boolean): Icon {
         // A run in progress clears the previous result: the user looks at the
         // run that just began, not at what the last one left.
         if (LuaUnitHighlights.isRunning()) {
-            return LuaUnitStatusIcons.NOT_RUN
+            return if (partial) LuaUnitStatusIcons.withDot(LuaUnitStatusIcons.NOT_RUN)
+            else LuaUnitStatusIcons.NOT_RUN
         }
-        return LuaUnitStatusIcons.of(stateOf(cases))
+        return if (partial) LuaUnitStatusIcons.partialOf(stateOf(cases))
+        else LuaUnitStatusIcons.of(stateOf(cases))
     }
 
     /** The tail of the marker tooltip: " — passed", " — failed", " — error". */

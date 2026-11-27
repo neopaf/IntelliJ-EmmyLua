@@ -191,7 +191,7 @@ class LuaUnitRunLineMarkerContributor : LineMarkerProvider {
         // a case. An `id` inside a nested table (a pipe dictionary, a
         // counter list) is plain data: no marker there.
         val literal = PsiTreeUtil.getParentOfType(element, LuaLiteralExpr::class.java, false)
-        if (literal != null && isDataEntry(literal) &&
+        if (literal != null && LuaUnitDataRows.isEntryLiteral(literal) &&
             element.textRange.startOffset == literal.textRange.startOffset
         ) {
             val root = LuaUnitProjectRoot.of(manifest)
@@ -361,37 +361,6 @@ class LuaUnitRunLineMarkerContributor : LineMarkerProvider {
         return true
     }
 
-    private fun isDataEntry(literal: LuaLiteralExpr): Boolean {
-        val text = literal.text
-        if (text.length < 2 || (text.first() != '"' && text.first() != '\'')) {
-            return false
-        }
-        // The key of the field must be exactly `id`/`desc` (or ["id"] /
-        // ['id']), not a mere prefix like `identifier`; the leading name is
-        // matched whole. `desc` is the row's case name when the generator
-        // reads it first, so its literal is the marker's anchor too.
-        val field = literal.parent?.text?.trimStart() ?: return false
-        val name = field.takeWhile { it.isLetterOrDigit() || it == '_' }
-        return name == "id" || name == "desc" ||
-            field.startsWith("[\"id\"]") || field.startsWith("['id']") ||
-            field.startsWith("[\"desc\"]") || field.startsWith("['desc']")
-    }
-
-    /** True when the literal is the value of the row's `desc` field. */
-    private fun isDescField(literal: LuaLiteralExpr): Boolean {
-        val field = literal.parent?.text?.trimStart() ?: return false
-        val name = field.takeWhile { it.isLetterOrDigit() || it == '_' }
-        return name == "desc" || field.startsWith("[\"desc\"]") || field.startsWith("['desc']")
-    }
-
-    /** True when the row of the literal has a `desc` field besides the `id`. */
-    private fun hasDescSibling(literal: LuaLiteralExpr): Boolean {
-        val row = PsiTreeUtil.getParentOfType(
-            literal, com.tang.intellij.lua.psi.LuaTableExpr::class.java, false
-        ) ?: return false
-        return row.findField("desc") != null
-    }
-
     /** One icon, a Run and a Debug entry. */
     private fun info(tooltip: String, element: PsiElement): Marker =
         info(tooltip, element, casesOnLine(element))
@@ -472,12 +441,12 @@ class LuaUnitRunLineMarkerContributor : LineMarkerProvider {
         dataFile: java.nio.file.Path
     ): Marker? {
         val literal = PsiTreeUtil.getParentOfType(element, LuaLiteralExpr::class.java, false) ?: return null
-        if (!isDataEntry(literal) || element.textRange.startOffset != literal.textRange.startOffset) {
+        if (!LuaUnitDataRows.isEntryLiteral(literal) || element.textRange.startOffset != literal.textRange.startOffset) {
             return null
         }
         // The `desc` of a row names the case: the marker sits there, and the
         // `id` literal of the same row stays plain data.
-        if (!isDescField(literal) && hasDescSibling(literal)) {
+        if (!LuaUnitDataRows.isDescField(literal) && LuaUnitDataRows.hasDescSibling(literal)) {
             return null
         }
         val raw = literal.text
@@ -493,17 +462,34 @@ class LuaUnitRunLineMarkerContributor : LineMarkerProvider {
         // module; two generators of one data module name their cases alike
         // (test_ss7_data feeds test_decode_ss7 and test_encode_ss7 the same
         // "TestSuite.test_<id>"), so the generator's file tells them apart.
-        fun caseName(generator: LuaUnitDataSources.Generator): String =
-            if (generator.suite == "_G") generator.prefix + id
-            else generator.suite + "." + generator.prefix + id
-        val tooltip = "Run " + generators.joinToString("; ") { generator ->
-            caseName(generator) + " (" + generator.file.fileName + ")"
+        val expected = LuaUnitLineCases.expected(generators, id)
+        val tooltip = "Run " + expected.joinToString("; ") { case ->
+            case.caseName + " (" + case.file.fileName + ")"
+        }
+        val cases = casesOnLine(literal)
+        // The cases of the line that did run in its newest run decide the
+        // colour; the dot says that some of them did not, and the tooltip names
+        // which.
+        val latest = LuaUnitLineCases.casesInLatestRun(cases)
+        val partial = LuaUnitLineCases.partial(expected, cases)
+        val tail = if (partial) {
+            " — " + LuaUnitLineCases.coverageText(expected, cases)
+        } else {
+            LuaUnitGutterStatus.suffixOf(latest)
         }
         // One Run/Debug pair per generator, labelled by the generator's file
         // (its leading "test_" says nothing here) and separated by a rule,
         // the way the platform separates unrelated actions.
         val actions = ArrayList<AnAction>()
-        var singleRun: AnAction? = null
+        // A row that feeds several suites has one run of its own: all the
+        // cases it declares, in one tab. A plain click runs exactly that.
+        val runAll = if (generators.size > 1) dataCasesAction(element, expected, false) else null
+        if (runAll != null) {
+            actions.add(runAll)
+            actions.add(dataCasesAction(element, expected, true))
+            actions.add(com.intellij.openapi.actionSystem.Separator.create())
+        }
+        var singleRun: AnAction? = runAll
         for ((index, generator) in generators.withIndex()) {
             if (index > 0) {
                 actions.add(com.intellij.openapi.actionSystem.Separator.create())
@@ -520,15 +506,39 @@ class LuaUnitRunLineMarkerContributor : LineMarkerProvider {
                 singleRun = run
             }
         }
-        val cases = casesOnLine(literal)
         return Marker(
-            LuaUnitGutterStatus.iconOf(cases),
+            LuaUnitGutterStatus.iconOf(latest, partial),
             actions.toTypedArray(),
-            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) },
+            Function { tooltip + tail },
             // One row, one case: a plain click runs it. A row that feeds
-            // several suites has no single test, so the click keeps the menu.
+            // several suites has no single test, so the click runs all of
+            // them — the marker names every case in its menu and tooltip.
             singleRun
         )
+    }
+
+    /** Runs every case a data row declares: one process per generator file. */
+    private fun dataCasesAction(
+        element: PsiElement,
+        expected: List<LuaUnitLineCases.ExpectedCase>,
+        debug: Boolean
+    ): AnAction {
+        val text = if (debug) "Debug all ${expected.size} cases" else "Run all ${expected.size} cases"
+        return object : AnAction(text, text, icon(debug)) {
+            init {
+                templatePresentation.setText(text, false)
+            }
+
+            override fun actionPerformed(event: AnActionEvent) {
+                val project = event.project ?: return
+                val factory = LuaUnitConfigurationType.getInstance().configurationFactories.first()
+                val template = factory.createTemplateConfiguration(project) as? LuaUnitRunConfiguration
+                    ?: return
+                template.configureDataCases(expected.map { case -> case.file to case.caseName })
+                val settings = LuaUnitRunConfigurations.reuseOrCreate(project, template) ?: return
+                ProgramRunnerUtil.executeConfiguration(settings, executor(debug))
+            }
+        }
     }
 
     /** Opens the settings of the configuration the gutter would run. */
