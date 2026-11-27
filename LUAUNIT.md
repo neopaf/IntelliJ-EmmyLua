@@ -145,9 +145,12 @@ not prose — they never become part of a description.
   single test file. In the suite files, every case declaration
   (`function TestSuite:test_x()`) and every data row (`id = "..."`, in both
   suite files and data modules) gets the same marker with **Run** and **Debug**
-  actions. A data row several suites build their cases from is more than one
+  actions. A plain click on a marker that names one test runs it at once; the
+  Run/Debug question is asked by a right click, which always opens the menu.
+  A data row several suites build their cases from is more than one
   test: the icon's menu asks which one to run — a labelled Run/Debug pair
-  (plus Modify Run Configuration) per generator file.
+  (plus Modify Run Configuration) per generator file — and a plain click there
+  opens that menu too.
 - **A file node with cases in the tests tree** — its context menu carries Run,
   Debug and Modify Run Configuration for the whole file: the node itself has no
   location URL (a double-click toggles it), so the platform builds no entries
