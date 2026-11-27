@@ -21,8 +21,11 @@ import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.execution.testframework.PoolOfTestIcons
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.util.PsiTreeUtil
 import com.tang.intellij.lua.psi.LuaTypes
 import java.nio.file.Path
 
@@ -45,6 +48,12 @@ import java.nio.file.Path
  * <p>The declaration of a suite table (`SomeSuite = {}`) gets the same mark,
  * aggregated over the tests declared on that table — the way the test tree
  * paints a suite node.
+ *
+ * <p>The manifest of the suite gets the marks too, on the very lines its
+ * run icons sit on: the first line (the whole suite), a section title (its
+ * group) and an entry (that file). Each mark is the state of the cases the
+ * icon runs, so the editor shows where the last run failed without opening
+ * the test files.
  */
 class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
 
@@ -66,6 +75,11 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
         var first = lineStart
         while (first < lineEnd && (chars[first] == ' ' || chars[first] == '\t')) {
             first++
+        }
+        // The manifest of the suite carries the run icons; the marks of the
+        // results sit on the very same lines.
+        if (isManifest(virtualFile)) {
+            return manifestStatus(element, file, virtualFile, line, offset, first)
         }
         val index = LuaUnitRunIndex.getInstance(project)
         val path = LuaUnitRunIndex.canonical(virtualFile.path)
@@ -120,6 +134,59 @@ class LuaUnitStatusLineMarkerProvider : LineMarkerProvider {
             com.intellij.util.Function<PsiElement, String> { "LuaUnit: ignored (${target.caseName})" }, null,
             GutterIconRenderer.Alignment.LEFT, java.util.function.Supplier { "LuaUnit: ignored" }
         )
+    }
+
+    /** True when the file itself is the manifest of the suite, not a test file. */
+    private fun isManifest(virtualFile: VirtualFile): Boolean =
+        LuaTestManifest.MANIFEST_NAMES.any { it == virtualFile.name }
+
+    /**
+     * The mark of a manifest line: the first line of the file (the "Run all"
+     * icon), a section title (its group) or an entry (that file). The state is
+     * aggregated over the cases the icon runs — the way the test tree paints a
+     * group node. Null until a run has told the index something about them.
+     */
+    private fun manifestStatus(
+        element: PsiElement,
+        file: PsiFile,
+        virtualFile: VirtualFile,
+        line: Int,
+        offset: Int,
+        first: Int
+    ): LineMarkerInfo<*>? {
+        val path = Path.of(virtualFile.path)
+        val directory = LuaUnitProjectRoot.of(path) ?: path.parent ?: path.toAbsolutePath().parent
+        val text = file.text
+        val index = LuaUnitRunIndex.getInstance(element.project)
+        // The first line runs everything: the "Run all" icon sits on the first
+        // leaf of the file, whatever that leaf is.
+        if (element == PsiTreeUtil.getDeepestFirst(file)) {
+            return filesStatus(element, index, LuaTestManifest.filesIn(text, directory), "LuaUnit: all tests")
+        }
+        // One marker per line: only the first leaf of the line answers.
+        if (offset != first) {
+            return null
+        }
+        val section = LuaTestManifest.sectionAt(text, directory, line)
+        if (section != null) {
+            return filesStatus(element, index, section.files, "LuaUnit: ${section.name}")
+        }
+        val entry = LuaTestManifest.entryAt(text, directory, line) ?: return null
+        return filesStatus(element, index, listOf(entry), "LuaUnit: ${entry.fileName}")
+    }
+
+    /** The state of the cases behind [files], aggregated as the test tree does. */
+    private fun filesStatus(
+        element: PsiElement,
+        index: LuaUnitRunIndex,
+        files: List<Path>,
+        label: String
+    ): LineMarkerInfo<*>? {
+        val cases = files.flatMap { index.casesBehind(it.toString()) }
+        if (cases.isEmpty()) {
+            return null
+        }
+        return statusMarker(element, cases, label)
     }
 
     /** The result of the last run: a tick, a cross or the error circle. */

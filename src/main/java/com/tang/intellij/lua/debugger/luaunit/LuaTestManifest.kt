@@ -86,6 +86,20 @@ object LuaTestManifest {
     fun entryAt(text: String, directory: Path, line: Int): Path? =
         parseText(text, directory).entryLines[line]
 
+    /** Every file the manifest in [text] lists, sections flattened. */
+    fun filesIn(text: String, directory: Path): List<Path> =
+        parseText(text, directory).groups.flatMap { it.files }
+
+    /**
+     * The section whose title sits on [line] of [text], or null when the line
+     * is not a section title with entries below.
+     */
+    fun sectionAt(text: String, directory: Path, line: Int): Group? {
+        val parsed = parseText(text, directory)
+        val name = parsed.sectionTitleLines[line] ?: return null
+        return parsed.groups.firstOrNull { it.name == name }
+    }
+
     private fun parse(manifest: Path): Parsed {
         val stamp = try {
             Files.getLastModifiedTime(manifest).toMillis()

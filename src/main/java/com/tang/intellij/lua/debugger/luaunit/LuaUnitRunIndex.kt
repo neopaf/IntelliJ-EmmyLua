@@ -245,21 +245,27 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
     }
 
     /**
+     * The cases that decide the state of [file]: its own cases (declared in it
+     * or run from it), or, for a fixture, the cases that read it. Empty when
+     * no run has touched the file.
+     */
+    fun casesBehind(file: String): List<CaseResult> {
+        val path = canonical(file)
+        val own = state.cases.filter { it.testFile == path || it.declarationFile == path }
+        return if (own.isNotEmpty()) own else testsUsing(path)
+    }
+
+    /**
      * The state of a file in the project view: a test file follows its own
      * cases, a fixture follows the cases that read it. Null when the file is
      * not known to any run — such a file keeps the usual colour.
      */
     fun aggregateOf(file: String): Status? {
-        val path = canonical(file)
-        val own = state.cases.filter { it.testFile == path || it.declarationFile == path }
-        if (own.isNotEmpty()) {
-            return if (own.any { it.failed }) Status.FAILED else Status.PASSED
+        val own = casesBehind(file)
+        if (own.isEmpty()) {
+            return null
         }
-        val using = testsUsing(path)
-        if (using.isNotEmpty()) {
-            return if (using.any { it.failed }) Status.FAILED else Status.PASSED
-        }
-        return null
+        return if (own.any { it.failed }) Status.FAILED else Status.PASSED
     }
 
     /**
