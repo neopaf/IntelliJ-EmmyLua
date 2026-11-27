@@ -16,14 +16,19 @@
 
 package com.tang.intellij.lua.debugger.luaunit
 
+import com.intellij.codeInsight.daemon.LineMarkerInfo
+import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.execution.executors.DefaultRunExecutor
-import com.intellij.execution.lineMarker.RunLineMarkerContributor
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.Function
@@ -32,6 +37,7 @@ import com.tang.intellij.lua.psi.LuaFuncDef
 import com.tang.intellij.lua.psi.LuaLiteralExpr
 import com.tang.intellij.lua.psi.LuaLocalFuncDef
 import com.tang.intellij.lua.psi.LuaPsiFile
+import javax.swing.Icon
 
 /**
  * The Run/Debug gutter icons of a LuaUnit test file.
@@ -41,23 +47,56 @@ import com.tang.intellij.lua.psi.LuaPsiFile
  * generated case, in a suite file as well as in a plain data module (where the
  * row declares the case of every suite that requires the module).
  *
- * <p>The icon offers exactly two entries, Run and Debug. They build the
- * configuration from the element the icon sits on (through
- * [LuaUnitRunConfigurationProducer.configureFor]) and reuse the configuration
- * of the previous run of the same scope, so the Run menu does not grow a new
- * entry on every click.
+ * <p>A plain left click runs the marker's run at once when there is exactly one
+ * of it: the icon of one case (or of one scope — the whole suite, a section, a
+ * file) needs no question, it is run. Only a data row that feeds more than one
+ * suite has several runs behind one icon, and the click there opens the menu
+ * instead. A right click always opens the menu (Run, Debug, Modify Run
+ * Configuration), so the usual "run or debug?" question is asked only on
+ * demand.
  *
- * <p>One line, one marker: the platform asks this contributor twice — the fast
- * pass walks the leaves of the file, the slow one the composite nodes — and a
- * marker created on both appeared in the gutter twice, its menus glued into
- * "Run, Debug, Run, Debug". Only a leaf that starts its own anchor (the
- * declaration, the literal of a data row) may answer.
+ * <p>The entries build the configuration from the element the icon sits on
+ * (through [LuaUnitRunConfigurationProducer.configureFor]) and reuse the
+ * configuration of the previous run of the same scope, so the Run menu does
+ * not grow a new entry on every click.
+ *
+ * <p>One line, one marker: the platform asks this provider for every element of
+ * the file, and a marker created on both a composite node and its first leaf
+ * appeared in the gutter twice, its menus glued into "Run, Debug, Run, Debug".
+ * Only a leaf that starts its own anchor (the declaration, the literal of a
+ * data row) may answer.
  */
-class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
+class LuaUnitRunLineMarkerContributor : LineMarkerProvider {
 
-    override fun getInfo(element: PsiElement): Info? {
-        // Leaves only: a composite node is asked in the slow pass, and its
-        // first leaf has already answered in the fast one.
+    /**
+     * What one gutter icon shows: the icon with the result, the menu entries of
+     * a right click, and the entry a plain click runs ([clickAction]).
+     */
+    private class Marker(
+        val icon: Icon,
+        val actions: Array<AnAction>,
+        val tooltip: Function<PsiElement, String>,
+        /**
+         * The entry a plain left click runs, or null when the click has to open
+         * the menu: more than one case behind one icon leaves no single test to
+         * run.
+         */
+        val clickAction: AnAction?
+    )
+
+    override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
+        val marker = markerAt(element) ?: return null
+        // The platform marks a file with run markers as runnable; the
+        // contributor used to do it for this one.
+        element.containingFile?.virtualFile?.let {
+            com.intellij.execution.lineMarker.RunLineMarkerProvider.markRunnable(it, true)
+        }
+        return LuaUnitLineMarkerInfo(element, marker)
+    }
+
+    private fun markerAt(element: PsiElement): Marker? {
+        // Leaves only: a composite node holds its first leaf, and the leaf has
+        // already answered.
         if (element.firstChild != null) {
             return null
         }
@@ -214,16 +253,20 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         tooltip: String,
         cases: Collection<LuaUnitRunIndex.CaseResult>,
         configure: (LuaUnitRunConfiguration) -> Unit
-    ): Info =
-        Info(
+    ): Marker {
+        val run = scopeAction("Run", false, configure)
+        return Marker(
             LuaUnitGutterStatus.iconOf(cases),
             arrayOf(
-                scopeAction("Run", false, configure),
+                run,
                 scopeAction("Debug", true, configure),
                 modifyScopeAction(configure)
             ),
-            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) }
+            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) },
+            // One scope, one run: a plain click runs it, no question.
+            run
         )
+    }
 
     /**
      * Opens the settings of the scope [configure] sets up. The configuration is
@@ -350,7 +393,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
     }
 
     /** One icon, a Run and a Debug entry. */
-    private fun info(tooltip: String, element: PsiElement): Info =
+    private fun info(tooltip: String, element: PsiElement): Marker =
         info(tooltip, element, casesOnLine(element))
 
     /** One icon, a Run and a Debug entry, painted with the result of [cases]. */
@@ -358,12 +401,15 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         tooltip: String,
         element: PsiElement,
         cases: Collection<LuaUnitRunIndex.CaseResult>
-    ): Info {
+    ): Marker {
         val provider = Function<PsiElement, String> { tooltip + LuaUnitGutterStatus.suffixOf(cases) }
-        return Info(
+        val run = runAction(element, false)
+        return Marker(
             LuaUnitGutterStatus.iconOf(cases),
-            arrayOf(runAction(element, false), runAction(element, true), modifyElementAction(element)),
-            provider
+            arrayOf(run, runAction(element, true), modifyElementAction(element)),
+            provider,
+            // The icon names one case: a plain click runs it.
+            run
         )
     }
 
@@ -424,7 +470,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         element: PsiElement,
         manifest: java.nio.file.Path,
         dataFile: java.nio.file.Path
-    ): Info? {
+    ): Marker? {
         val literal = PsiTreeUtil.getParentOfType(element, LuaLiteralExpr::class.java, false) ?: return null
         if (!isDataEntry(literal) || element.textRange.startOffset != literal.textRange.startOffset) {
             return null
@@ -457,6 +503,7 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         // (its leading "test_" says nothing here) and separated by a rule,
         // the way the platform separates unrelated actions.
         val actions = ArrayList<AnAction>()
+        var singleRun: AnAction? = null
         for ((index, generator) in generators.withIndex()) {
             if (index > 0) {
                 actions.add(com.intellij.openapi.actionSystem.Separator.create())
@@ -465,15 +512,22 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             // without mnemonic parsing below, so it is not eaten.
             val pair = if (generators.size == 1) null
                 else generator.file.fileName.toString().removeSuffix(".lua").removePrefix("test_")
-            actions.add(dataAction(element, generator, id, pair, false))
+            val run = dataAction(element, generator, id, pair, false)
+            actions.add(run)
             actions.add(dataAction(element, generator, id, pair, true))
             actions.add(modifyAction(element, generator, id, pair))
+            if (generators.size == 1) {
+                singleRun = run
+            }
         }
         val cases = casesOnLine(literal)
-        return Info(
+        return Marker(
             LuaUnitGutterStatus.iconOf(cases),
             actions.toTypedArray(),
-            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) }
+            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) },
+            // One row, one case: a plain click runs it. A row that feeds
+            // several suites has no single test, so the click keeps the menu.
+            singleRun
         )
     }
 
@@ -552,4 +606,37 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
 
     private fun executor(debug: Boolean) =
         if (debug) DefaultDebugExecutor.getDebugExecutorInstance() else DefaultRunExecutor.getRunExecutorInstance()
+
+    /**
+     * One gutter icon of this provider. The platform's own renderer clicks
+     * through to the only entry or opens the menu, and it never knows which of
+     * the entries is "the" run; this one does: a plain click runs
+     * [Marker.clickAction] when the marker names exactly one test, and a right
+     * click always asks with the whole menu.
+     */
+    private class LuaUnitLineMarkerInfo(
+        element: PsiElement,
+        private val marker: Marker
+    ) : LineMarkerInfo<PsiElement>(
+        element,
+        element.textRange,
+        marker.icon,
+        marker.tooltip,
+        null,
+        GutterIconRenderer.Alignment.CENTER,
+        java.util.function.Supplier<String> { "" }
+    ) {
+
+        override fun createGutterRenderer(): GutterIconRenderer = Renderer(this, marker)
+
+        private class Renderer(
+            info: LineMarkerInfo<PsiElement>,
+            private val marker: Marker
+        ) : LineMarkerInfo.LineMarkerGutterIconRenderer<PsiElement>(info) {
+
+            override fun getClickAction(): AnAction? = marker.clickAction
+
+            override fun getPopupMenuActions(): ActionGroup = DefaultActionGroup(*marker.actions)
+        }
+    }
 }

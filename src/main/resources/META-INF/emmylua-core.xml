@@ -130,7 +130,7 @@
         <!-- runner & debugger -->
         <runConfigurationProducer implementation="com.tang.intellij.lua.debugger.LuaRunConfigurationProducer"/>
         <runConfigurationProducer implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitRunConfigurationProducer"/>
-        <runLineMarkerContributor language="Lua" implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitRunLineMarkerContributor"/>
+        <codeInsight.lineMarkerProvider language="Lua" implementationClass="com.tang.intellij.lua.debugger.luaunit.LuaUnitRunLineMarkerContributor"/>
         <programRunner implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProgramRunner"/>
         <configurationType implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitConfigurationType"/>
         <postStartupActivity implementation="com.tang.intellij.lua.debugger.luaunit.LuaUnitProjectActivity"/>
