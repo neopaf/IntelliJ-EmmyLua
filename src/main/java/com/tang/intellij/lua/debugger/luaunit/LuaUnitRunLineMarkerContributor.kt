@@ -73,28 +73,37 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             // down, a section title line runs its section, and an entry line
             // runs that file. Entries without a section comment have no
             // group — there is nothing above the file to run.
+            // The manifest is parsed from the editor's copy: unsaved edits
+            // must not leave the markers behind until the file is saved.
+            val directory = LuaUnitProjectRoot.of(manifest)
+                ?: manifest.parent ?: manifest.toAbsolutePath().parent
             if (isFirstLeaf(element)) {
-                return info("Run all LuaUnit tests", element)
+                val cases = LuaUnitGutterStatus.casesBehind(
+                    element.project,
+                    LuaTestManifest.filesIn(file.text, directory)
+                )
+                return info("Run all LuaUnit tests", element, cases)
             }
             if (element is com.intellij.psi.PsiWhiteSpace || !isFirstElementOfLine(element)) {
                 return null
             }
             val line = file.text.substring(0, element.textRange.startOffset).count { it == '\n' } + 1
-            // The manifest is parsed from the editor's copy: unsaved edits
-            // must not leave the markers behind until the file is saved.
-            val directory = LuaUnitProjectRoot.of(manifest)
-                ?: manifest.parent ?: manifest.toAbsolutePath().parent
             val title = LuaTestManifest.sectionTitleAt(file.text, directory, line)
             if (title != null) {
                 com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
                     .info("manifest gutter: line=$line TITLE '$title'")
-                return scopeInfo("Run $title tests") { it.configureSection(manifest, title) }
+                val cases = LuaUnitGutterStatus.casesBehind(
+                    element.project,
+                    LuaTestManifest.sectionAt(file.text, directory, line)?.files ?: emptyList()
+                )
+                return scopeInfo("Run $title tests", cases) { it.configureSection(manifest, title) }
             }
             val entry = LuaTestManifest.entryAt(file.text, directory, line)
             if (entry != null) {
                 com.intellij.openapi.diagnostic.Logger.getInstance("LuaUnit")
                     .info("manifest gutter: line=$line ENTRY $entry")
-                return scopeInfo("Run ${entry.fileName}") { it.configureFile(entry) }
+                val cases = LuaUnitGutterStatus.casesBehind(element.project, listOf(entry))
+                return scopeInfo("Run ${entry.fileName}", cases) { it.configureFile(entry) }
             }
             return null
         }
@@ -113,7 +122,10 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
         // runs the cases of that table only, not the whole file (a file may
         // hold more than one suite).
         suiteAt(element, file)?.let { name ->
-            return scopeInfo("Run $name") { it.configureSuite(diskPath, name) }
+            return scopeInfo(
+                "Run $name",
+                LuaUnitGutterStatus.casesOfSuite(element.project, path, name)
+            ) { it.configureSuite(diskPath, name) }
         }
 
         // A case's function: "function T:test_x()" parses as LuaClassMethodDef,
@@ -198,15 +210,19 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
     }
 
     /** One marker: a Run/Debug pair for the scope [configure] sets up. */
-    private fun scopeInfo(tooltip: String, configure: (LuaUnitRunConfiguration) -> Unit): Info =
+    private fun scopeInfo(
+        tooltip: String,
+        cases: Collection<LuaUnitRunIndex.CaseResult>,
+        configure: (LuaUnitRunConfiguration) -> Unit
+    ): Info =
         Info(
-            AllIcons.RunConfigurations.TestState.Run,
+            LuaUnitGutterStatus.iconOf(cases),
             arrayOf(
                 scopeAction("Run", false, configure),
                 scopeAction("Debug", true, configure),
                 modifyScopeAction(configure)
             ),
-            Function { tooltip }
+            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) }
         )
 
     /**
@@ -334,13 +350,32 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
     }
 
     /** One icon, a Run and a Debug entry. */
-    private fun info(tooltip: String, element: PsiElement): Info {
-        val provider = Function<PsiElement, String> { tooltip }
+    private fun info(tooltip: String, element: PsiElement): Info =
+        info(tooltip, element, casesOnLine(element))
+
+    /** One icon, a Run and a Debug entry, painted with the result of [cases]. */
+    private fun info(
+        tooltip: String,
+        element: PsiElement,
+        cases: Collection<LuaUnitRunIndex.CaseResult>
+    ): Info {
+        val provider = Function<PsiElement, String> { tooltip + LuaUnitGutterStatus.suffixOf(cases) }
         return Info(
-            AllIcons.RunConfigurations.TestState.Run,
+            LuaUnitGutterStatus.iconOf(cases),
             arrayOf(runAction(element, false), runAction(element, true), modifyElementAction(element)),
             provider
         )
+    }
+
+    /** The cases declared on the element's line, for the result of its marker. */
+    private fun casesOnLine(element: PsiElement): List<LuaUnitRunIndex.CaseResult> {
+        val file = element.containingFile ?: return emptyList()
+        val virtualFile = file.virtualFile ?: return emptyList()
+        val document = com.intellij.psi.PsiDocumentManager.getInstance(element.project)
+            .getDocument(file) ?: return emptyList()
+        val offset = element.textRange.startOffset.coerceIn(0, document.textLength)
+        val line = document.getLineNumber(offset) + 1
+        return LuaUnitGutterStatus.casesOnLine(element.project, virtualFile, document, line)
     }
 
     /** Opens the settings of the case [element] declares. */
@@ -434,7 +469,12 @@ class LuaUnitRunLineMarkerContributor : RunLineMarkerContributor() {
             actions.add(dataAction(element, generator, id, pair, true))
             actions.add(modifyAction(element, generator, id, pair))
         }
-        return Info(AllIcons.RunConfigurations.TestState.Run, actions.toTypedArray(), Function { tooltip })
+        val cases = casesOnLine(literal)
+        return Info(
+            LuaUnitGutterStatus.iconOf(cases),
+            actions.toTypedArray(),
+            Function { tooltip + LuaUnitGutterStatus.suffixOf(cases) }
+        )
     }
 
     /** Opens the settings of the configuration the gutter would run. */

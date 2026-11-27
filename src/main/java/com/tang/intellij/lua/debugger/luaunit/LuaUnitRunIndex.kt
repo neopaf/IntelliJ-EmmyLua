@@ -111,6 +111,15 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
     @Volatile
     private var directoryCache: Map<String, Status>? = null
 
+    /**
+     * The declared cases grouped by declaration line, per file. The gutter asks
+     * for the cases of a line while the daemon paints every leaf of a file, and
+     * a linear walk over every case of the project per leaf is the wrong side
+     * of that cost. Dropped whenever the state changes.
+     */
+    @Volatile
+    private var lineCache: Map<String, Map<Int, List<CaseResult>>> = emptyMap()
+
     override fun getState(): State = state
 
     override fun loadState(state: State) {
@@ -139,6 +148,7 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
             it.lastRun = state.lastRun
         }
         directoryCache = null
+        lineCache = emptyMap()
     }
 
     /**
@@ -172,6 +182,7 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
         state.cases = ArrayList(merged.values)
         state.lastRun = System.currentTimeMillis()
         directoryCache = null
+        lineCache = emptyMap()
         // The workspace is saved by the platform on its own schedule; saving
         // here meant serialising hundreds of case records (with their messages)
         // right in the middle of the run's completion.
@@ -229,6 +240,24 @@ class LuaUnitRunIndex(private val project: Project) : PersistentStateComponent<L
         return state.cases.filter {
             it.declarationFile == path || (it.declarationFile.isEmpty() && it.testFile == path)
         }
+    }
+
+    /**
+     * The cases declared in [file], grouped by their declaration line. The
+     * gutter asks about one line at a time; grouping once per file keeps the
+     * cost from growing with the number of cases of the project.
+     *
+     * <p>A `setUp` and the record of a whole file are not tests of a line: they
+     * are left out, so the caller never has to filter them again.
+     */
+    fun casesByLine(file: String): Map<Int, List<CaseResult>> {
+        val path = canonical(file)
+        lineCache[path]?.let { return it }
+        val grouped = casesDeclaredIn(path)
+            .filter { !it.setup && !it.fileLevel && it.declarationLine > 0 }
+            .groupBy { it.declarationLine }
+        lineCache = lineCache + (path to grouped)
+        return grouped
     }
 
     /**
